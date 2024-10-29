@@ -1,0 +1,16 @@
+<widgets xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Widget:etc/widget.xsd">
+    <widget class="Cwax\Banner\Block\Widget\Banner" id="cwax_banner_widget">
+        <label>ConversionWax Banner</label>
+        <description>Display ConversionWax Banner</description>
+        <parameters>
+<!--            <parameter name="title" xsi:type="text" required="true" visible="true" sort_order="10">-->
+<!--                <label>Label</label>-->
+<!--            </parameter>-->
+            <parameter name="banner_div" xsi:type="block" visible="true" required="true" sort_order="20">
+                <label translate="true">Banner Div HTML</label>
+                <block class="Cwax\Banner\Block\Adminhtml\Widget\Type\Textarea" />
+            </parameter>
+        </parameters>
+    </widget>
+</widgets>
