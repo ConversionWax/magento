@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/topology.xsd">
+    <exchange name="magento" type="topic">
+        <binding id="conversionwaxLastmileEvents"
+                 topic="conversionwax.lastmile.events"
+                 destinationType="queue"
+                 destination="conversionwax.lastmile.events"/>
+        <binding id="conversionwaxLastmileFailed"
+                 topic="conversionwax.lastmile.failed"
+                 destinationType="queue"
+                 destination="conversionwax.lastmile.failed"/>
+    </exchange>
+</config>

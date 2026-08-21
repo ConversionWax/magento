@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
+    <event name="checkout_submit_all_after">
+        <observer name="conversionwax_lastmile_purchase"
+                  instance="Cwax\Banner\Observer\Lastmile\PurchaseObserver"/>
+    </event>
+    <event name="sales_quote_product_add_after">
+        <observer name="conversionwax_lastmile_add_to_cart"
+                  instance="Cwax\Banner\Observer\Lastmile\AddToCartObserver"/>
+    </event>
+</config>
