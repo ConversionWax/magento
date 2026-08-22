@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <type name="Magento\Config\Model\Config\TypePool">
+        <arguments>
+            <argument name="sensitive" xsi:type="array">
+                <item name="conversionwax_lastmile/connection/api_token" xsi:type="string">1</item>
+            </argument>
+        </arguments>
+    </type>
+
+    <preference for="Cwax\Banner\Api\ConsentResolverInterface"
+                type="Cwax\Banner\Model\Consent\CompositeConsentResolver"/>
+    <preference for="Cwax\Banner\Api\StoreConfigProviderInterface"
+                type="Cwax\Banner\Model\Consent\StoreConfigProvider"/>
+
+    <!--
+        Third-party extension point: another module adds its own resolver
+        purely by declaring, in its own di.xml, this same <type> node with one
+        additional <item> inside the "resolvers" array argument. Magento
+        merges array arguments by item name across modules, so this is purely
+        additive as long as the third party picks a key not already used
+        below. No edit to this module is required or expected.
+    -->
+    <type name="Cwax\Banner\Model\Consent\CompositeConsentResolver">
+        <arguments>
+            <argument name="resolvers" xsi:type="array">
+                <item name="gpc" xsi:type="object">Cwax\Banner\Model\Consent\GpcConsentResolver</item>
+                <item name="cookieRestriction" xsi:type="object">Cwax\Banner\Model\Consent\CookieRestrictionConsentResolver</item>
+                <item name="mode" xsi:type="object">Cwax\Banner\Model\Consent\ModeConsentResolver</item>
+                <item name="snippetIdentity" xsi:type="object">Cwax\Banner\Model\Consent\SnippetIdentityConsentResolver</item>
+            </argument>
+        </arguments>
+    </type>
+</config>

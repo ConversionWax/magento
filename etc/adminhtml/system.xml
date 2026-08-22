@@ -42,22 +42,8 @@
                        showInWebsite="1"
                        showInStore="1">
                     <label>ConversionWax Website ID</label>
-                    <validate>required-entry</validate>
-                    <comment>Copy the Website ID from Last Mile tracking settings in ConversionWax.</comment>
-                    <depends>
-                        <field id="enabled">1</field>
-                    </depends>
-                </field>
-                <field id="respect_cookie_restriction"
-                       translate="label comment"
-                       type="select"
-                       sortOrder="15"
-                       showInDefault="1"
-                       showInWebsite="1"
-                       showInStore="1">
-                    <label>Respect Magento Cookie Restriction</label>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <comment>When enabled, no Last Mile event or visitor cookie is created until Magento says the visitor may use cookies.</comment>
+                    <validate>required-entry validate-length minimum-length-36 maximum-length-36</validate>
+                    <comment>Copy the 36-character Website ID from Last Mile tracking settings in ConversionWax. A value of the wrong length is rejected at save time; this catches a truncated or partial paste, but it cannot confirm the ID matches the intended website.</comment>
                     <depends>
                         <field id="enabled">1</field>
                     </depends>
@@ -89,6 +75,37 @@
                     <depends>
                         <field id="enabled">1</field>
                     </depends>
+                </field>
+            </group>
+            <group id="consent"
+                   translate="label"
+                   type="text"
+                   sortOrder="20"
+                   showInDefault="1"
+                   showInWebsite="1"
+                   showInStore="1">
+                <label>Consent</label>
+                <field id="snippet_installed"
+                       translate="label comment"
+                       type="select"
+                       sortOrder="10"
+                       showInDefault="1"
+                       showInWebsite="1"
+                       showInStore="1">
+                    <label>Browser Snippet Installed</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Set to No for a server-only integration with no ConversionWax browser snippet on this store. Under Wait for Consent mode the server has no other way to learn that consent was granted, so this store falls back to the policy below instead of waiting for a cookie that can never appear.</comment>
+                </field>
+                <field id="fallback_policy"
+                       translate="label comment"
+                       type="select"
+                       sortOrder="20"
+                       showInDefault="1"
+                       showInWebsite="1"
+                       showInStore="1">
+                    <label>Server-Only Fallback Policy</label>
+                    <source_model>Cwax\Banner\Model\Config\Source\ConsentFallbackPolicy</source_model>
+                    <comment>Applies only when this store's consent mode cannot be resolved from ConversionWax at all, or when Browser Snippet Installed above is No and the resolved mode is Wait for Consent. Does not apply when the mode is known and a snippet is installed.</comment>
                 </field>
             </group>
         </section>

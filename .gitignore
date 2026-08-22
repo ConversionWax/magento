@@ -1,0 +1,20 @@
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editor swap/backup files
+*.swp
+*.swo
+*~
+
+# Local environment / dependency artifacts
+.env
+composer.lock
+/vendor/
+/node_modules/

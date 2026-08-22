@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Cwax\Banner\Observer\Lastmile;
 
+use Cwax\Banner\Model\Lastmile\EmailHasher;
 use Cwax\Banner\Model\Lastmile\EventQueue;
 use Magento\Framework\App\State;
 use Magento\Framework\Event\Observer;
@@ -15,6 +16,7 @@ class PurchaseObserver implements ObserverInterface
     public function __construct(
         private readonly EventQueue $eventQueue,
         private readonly State $appState,
+        private readonly EmailHasher $emailHasher,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -36,6 +38,8 @@ class PurchaseObserver implements ObserverInterface
         try {
             $area = $this->appState->getAreaCode();
         } catch (\Throwable) {
+            // Area code is not always set this early (eg CLI/setup context); expected, not an error.
+            $this->logger->debug('ConversionWax Last Mile skipped a purchase event: area code not set.');
             return;
         }
         if (!in_array($area, ['frontend', 'webapi_rest', 'graphql'], true)) {
@@ -65,9 +69,7 @@ class PurchaseObserver implements ObserverInterface
             return false;
         }
 
-        $email = method_exists($order, 'getCustomerEmail')
-            ? strtolower(trim((string) $order->getCustomerEmail()))
-            : '';
+        $email = method_exists($order, 'getCustomerEmail') ? (string) $order->getCustomerEmail() : '';
         $attributes = [
             'orderId' => $orderId,
             'value' => (float) $order->getGrandTotal(),
@@ -75,7 +77,7 @@ class PurchaseObserver implements ObserverInterface
             'customerId' => $order->getCustomerId() !== null
                 ? (string) $order->getCustomerId()
                 : null,
-            'emailHash' => $email !== '' ? hash('sha256', $email) : null,
+            'emailHash' => $this->emailHasher->hash($email),
         ];
         if (method_exists($order, 'getAllVisibleItems')) {
             $items = $order->getAllVisibleItems();

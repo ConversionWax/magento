@@ -22,7 +22,13 @@ class AddToCartObserver implements ObserverInterface
     public function execute(Observer $observer): void
     {
         try {
-            $area = $this->appState->getAreaCode();
+            try {
+                $area = $this->appState->getAreaCode();
+            } catch (\Throwable) {
+                // Area code is not always set this early (eg CLI/setup context); expected, not an error.
+                $this->logger->debug('ConversionWax Last Mile skipped an add-to-cart event: area code not set.');
+                return;
+            }
             if (!in_array($area, ['frontend', 'webapi_rest', 'graphql'], true)) {
                 return;
             }
@@ -30,26 +36,41 @@ class AddToCartObserver implements ObserverInterface
             if (!is_array($items) || $items === []) {
                 return;
             }
-            $item = reset($items);
-            if (!is_object($item)) {
-                return;
+            foreach ($items as $item) {
+                $this->enqueueItem($item);
             }
-            $sku = method_exists($item, 'getSku') ? (string) $item->getSku() : '';
-            if ($sku === '' && method_exists($item, 'getProduct')) {
-                $product = $item->getProduct();
-                $sku = is_object($product) && method_exists($product, 'getSku')
-                    ? (string) $product->getSku()
-                    : '';
-            }
-            if ($sku === '') {
-                return;
-            }
-            $this->eventQueue->enqueue('add_to_cart', ['productId' => $sku]);
         } catch (\Throwable $exception) {
             // Analytics must never stop cart mutation.
             $this->logger->error('ConversionWax Last Mile could not build an add-to-cart event.', [
                 'exception' => $exception,
             ]);
         }
+    }
+
+    private function enqueueItem(mixed $item): void
+    {
+        if (!is_object($item)) {
+            return;
+        }
+        $sku = method_exists($item, 'getSku') ? (string) $item->getSku() : '';
+        if ($sku === '' && method_exists($item, 'getProduct')) {
+            $product = $item->getProduct();
+            $sku = is_object($product) && method_exists($product, 'getSku')
+                ? (string) $product->getSku()
+                : '';
+        }
+        if ($sku === '') {
+            return;
+        }
+
+        $attributes = ['productId' => $sku];
+        if (method_exists($item, 'getRowTotal')) {
+            // Row total already reflects quantity, in major currency units.
+            $attributes['value'] = (float) $item->getRowTotal();
+        } elseif (method_exists($item, 'getQty') && method_exists($item, 'getPrice')) {
+            $attributes['value'] = (float) $item->getQty() * (float) $item->getPrice();
+        }
+
+        $this->eventQueue->enqueue('add_to_cart', $attributes);
     }
 }

@@ -4,6 +4,8 @@
     <event name="controller_front_send_response_before">
         <observer name="conversionwax_lastmile_page_view"
                   instance="Cwax\Banner\Observer\Lastmile\PageViewObserver"/>
+        <observer name="conversionwax_lastmile_identity_flush"
+                  instance="Cwax\Banner\Observer\Lastmile\IdentityFlushObserver"/>
     </event>
     <event name="catalog_controller_product_view">
         <observer name="conversionwax_lastmile_product_view"
