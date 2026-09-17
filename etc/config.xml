@@ -5,9 +5,12 @@
         <conversionwax_lastmile>
             <connection>
                 <enabled>0</enabled>
-                <respect_cookie_restriction>1</respect_cookie_restriction>
                 <endpoint>https://collect.conversionwax.com/v1/integrations/magento/events</endpoint>
             </connection>
+            <consent>
+                <snippet_installed>1</snippet_installed>
+                <fallback_policy>deny</fallback_policy>
+            </consent>
         </conversionwax_lastmile>
     </default>
 </config>

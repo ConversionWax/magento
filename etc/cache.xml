@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:App/etc/cache.xsd">
+    <type name="cwax_banner_consent_config"
+          instance="Cwax\Banner\Model\Consent\ConsentConfigCacheType"
+          translate="label,description">
+        <label>ConversionWax Consent Config</label>
+        <description>Cached consentMode responses fetched from the ConversionWax collector for consent resolution.</description>
+    </type>
+</config>

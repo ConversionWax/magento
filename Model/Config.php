@@ -11,11 +11,11 @@ use Magento\Store\Model\ScopeInterface;
 class Config
 {
     private const XML_PATH_ENABLED = 'conversionwax_lastmile/connection/enabled';
-    private const XML_PATH_RESPECT_COOKIE_RESTRICTION =
-        'conversionwax_lastmile/connection/respect_cookie_restriction';
     private const XML_PATH_WEB_PROPERTY_ID = 'conversionwax_lastmile/connection/web_property_id';
     private const XML_PATH_API_TOKEN = 'conversionwax_lastmile/connection/api_token';
     private const XML_PATH_ENDPOINT = 'conversionwax_lastmile/connection/endpoint';
+    private const XML_PATH_SNIPPET_INSTALLED = 'conversionwax_lastmile/consent/snippet_installed';
+    private const XML_PATH_CONSENT_FALLBACK_POLICY = 'conversionwax_lastmile/consent/fallback_policy';
 
     public function __construct(
         private readonly ScopeConfigInterface $scopeConfig,
@@ -27,15 +27,6 @@ class Config
     {
         return $this->scopeConfig->isSetFlag(
             self::XML_PATH_ENABLED,
-            ScopeInterface::SCOPE_STORE,
-            $storeId
-        );
-    }
-
-    public function respectsCookieRestriction(int $storeId): bool
-    {
-        return $this->scopeConfig->isSetFlag(
-            self::XML_PATH_RESPECT_COOKIE_RESTRICTION,
             ScopeInterface::SCOPE_STORE,
             $storeId
         );
@@ -70,8 +61,9 @@ class Config
             return '';
         }
 
-        $decrypted = $this->encryptor->decrypt($stored);
-        return $decrypted !== '' ? $decrypted : $stored;
+        // If decryption fails (crypt key rotation, DB restored into another
+        // env) the ciphertext must never be treated as a usable token.
+        return $this->encryptor->decrypt($stored);
     }
 
     public function isConfigured(int $storeId): bool
@@ -82,6 +74,49 @@ class Config
                 $this->getWebPropertyId($storeId)
             ) === 1
             && $this->getApiToken($storeId) !== ''
-            && str_starts_with($this->getEndpoint($storeId), 'https://');
+            && $this->isAllowedEndpoint($this->getEndpoint($storeId));
+    }
+
+    public function isSnippetInstalled(int $storeId): bool
+    {
+        return $this->scopeConfig->isSetFlag(
+            self::XML_PATH_SNIPPET_INSTALLED,
+            ScopeInterface::SCOPE_STORE,
+            $storeId
+        );
+    }
+
+    public function getConsentFallbackPolicy(int $storeId): string
+    {
+        $value = trim((string) $this->scopeConfig->getValue(
+            self::XML_PATH_CONSENT_FALLBACK_POLICY,
+            ScopeInterface::SCOPE_STORE,
+            $storeId
+        ));
+
+        return in_array($value, [
+            \Cwax\Banner\Model\Config\Source\ConsentFallbackPolicy::DENY,
+            \Cwax\Banner\Model\Config\Source\ConsentFallbackPolicy::GRANT,
+            \Cwax\Banner\Model\Config\Source\ConsentFallbackPolicy::MAGENTO_COOKIE,
+        ], true) ? $value : \Cwax\Banner\Model\Config\Source\ConsentFallbackPolicy::DENY;
+    }
+
+    /**
+     * Restrict the admin-set endpoint to the ConversionWax collector so the
+     * consumer cannot be pointed at an arbitrary internal or external host.
+     */
+    private function isAllowedEndpoint(string $endpoint): bool
+    {
+        if (!str_starts_with($endpoint, 'https://')) {
+            return false;
+        }
+
+        $host = parse_url($endpoint, PHP_URL_HOST);
+        if (!is_string($host) || $host === '') {
+            return false;
+        }
+        $host = strtolower($host);
+
+        return $host === 'collect.conversionwax.com' || str_ends_with($host, '.conversionwax.com');
     }
 }

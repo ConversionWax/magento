@@ -3,7 +3,16 @@
         xsi:noNamespaceSchemaLocation="urn:magento:framework-message-queue:etc/consumer.xsd">
     <consumer name="conversionwax.lastmile.events"
               queue="conversionwax.lastmile.events"
+              connection="db"
               handler="Cwax\Banner\Model\Queue\EventConsumer::process"
+              maxMessages="100"
+              maxIdleTime="60"
+              sleep="5"
+              onlySpawnWhenMessageAvailable="1"/>
+    <consumer name="conversionwax.lastmile.failed"
+              queue="conversionwax.lastmile.failed"
+              connection="db"
+              handler="Cwax\Banner\Model\Queue\FailedEventConsumer::process"
               maxMessages="100"
               maxIdleTime="60"
               sleep="5"
