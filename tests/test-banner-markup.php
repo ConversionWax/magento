@@ -68,4 +68,25 @@ check(
     '<div data-cwax-id="abc-1" data-cwax-mode="replace">Only $5 \\1 today</div>'
 );
 
+check(
+    'original html is filtered to the allowlist (script, handlers, javascript: links, images)',
+    BannerMarkup::build($div, 'replace', '<p onclick="x()">Hi <a href="javascript:alert(1)" onclick="y()">l</a><script>bad()</script><img src=x onerror=z()></p>'),
+    '<div data-cwax-id="abc-1" data-cwax-mode="replace"><p>Hi <a rel="noopener noreferrer nofollow">l</a></p></div>'
+);
+check(
+    'original html keeps safe links and formatting',
+    BannerMarkup::build($div, 'replace', '<h2>T</h2><strong>b</strong> <a href="https://x.com/?a=1&b=2">go</a>'),
+    '<div data-cwax-id="abc-1" data-cwax-mode="replace"><h2>T</h2><strong>b</strong> <a href="https://x.com/?a=1&amp;b=2" rel="noopener noreferrer nofollow">go</a></div>'
+);
+check(
+    'mode is never echoed into markup',
+    BannerMarkup::build($div, '"><script>x</script>', 'orig'),
+    $div
+);
+check(
+    'original html that filters to nothing leaves the div unchanged',
+    BannerMarkup::build($div, 'replace', '<script>x()</script>'),
+    $div
+);
+
 exit($failures ? 1 : 0);
