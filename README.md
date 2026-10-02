@@ -100,3 +100,11 @@ collector problems are corrected.
 The original widget remains available. It accepts a `banner_div` value and loads
 `https://assets.conversionwax.com/dist/app.js` on storefront pages. The CSP whitelist permits
 ConversionWax script, style, image, and connection hosts.
+
+### Replace mode (body text)
+
+Set the widget option `Mode` to `Replace the original text below` and enter the text that is on the page
+now in `Original text HTML`. The widget outputs the placeholder with `data-cwax-mode="replace"` around
+that text. The embed hides it (keeping its space) while the content loads, for 1.5 seconds at most, then
+swaps in the matching body text variant. If no variant applies, the original text stays. The widget can
+only replace text entered in the widget, not other text in the layout. Test: `php tests/test-banner-markup.php`.

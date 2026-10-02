@@ -11,6 +11,22 @@
                 <label translate="true">Banner Div HTML</label>
                 <block class="Cwax\Banner\Block\Adminhtml\Widget\Type\Textarea" />
             </parameter>
+            <parameter name="mode" xsi:type="select" visible="true" required="false" sort_order="30">
+                <label translate="true">Mode</label>
+                <description translate="true">Replace mode is for body text. Enter the text that is on the page now below. It stays visible while the content loads (1.5 seconds at most) and is replaced by the matching variant. If no variant applies, it stays. The widget can only replace text you enter here, not other text on the page.</description>
+                <options>
+                    <option name="default" value="" selected="true">
+                        <label translate="true">Fill the empty placeholder</label>
+                    </option>
+                    <option name="replace" value="replace">
+                        <label translate="true">Replace the original text below</label>
+                    </option>
+                </options>
+            </parameter>
+            <parameter name="original_html" xsi:type="block" visible="true" required="false" sort_order="40">
+                <label translate="true">Original text HTML (replace mode)</label>
+                <block class="Cwax\Banner\Block\Adminhtml\Widget\Type\Textarea" />
+            </parameter>
         </parameters>
     </widget>
 </widgets>
