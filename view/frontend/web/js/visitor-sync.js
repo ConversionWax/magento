@@ -14,6 +14,8 @@ define([
 
     var SECTION = 'cwax-visitor';
     var ALLOW_COOKIE = 'user_allowed_save_cookie';
+    var ALLOW_EVENT = 'user:allowed:save:cookie';
+    var MARKER = 'cwax-visitor-inputs';
 
     function needsReload(data, restriction, cookieAllowed) {
         var state = data && data.state;
@@ -38,7 +40,38 @@ define([
             return !!$.mage.cookies.get(ALLOW_COOKIE);
         }
 
-        var last = window.cw && window.cw.__mgShim === true ? window.cw.consentState() : null;
+        function gpc() {
+            return !!(window.navigator && window.navigator.globalPrivacyControl === true);
+        }
+
+        function inputs() {
+            return (cookieAllowed() ? '1' : '0') + (gpc() ? '1' : '0');
+        }
+
+        // True when a browser-visible input differs from the one the last reload ran for. Server-only
+        // reasons for a denial (collector mode, fallback policy) never change here, so they cause no
+        // reload loop on later pages. Storage failure counts as changed (still once per page).
+        function inputsChanged() {
+            try {
+                return window.sessionStorage.getItem(MARKER) !== inputs();
+            } catch (e) {
+                return true;
+            }
+        }
+
+        function remember() {
+            try {
+                window.sessionStorage.setItem(MARKER, inputs());
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        // Start from what the embed last read, so a change since then is always published.
+        var last = null;
+        if (window.cw && window.cw.__mgShim === true) {
+            last = window.cw.__mgLast !== undefined ? window.cw.__mgLast : window.cw.consentState();
+        }
 
         function publish() {
             var cw = window.cw;
@@ -58,19 +91,21 @@ define([
 
         function reload() {
             reloaded = true;
+            remember();
             customerData.reload([SECTION], true);
         }
 
         function apply(data) {
             publish();
-            if (!reloaded && needsReload(data, restriction, cookieAllowed())) {
+            if (!reloaded && needsReload(data, restriction, cookieAllowed())
+                && (!(data && data.state) || inputsChanged())) {
                 reload();
             }
         }
 
         section.subscribe(apply);
-        $(document).on('click', '#btn-cookie-allow', function () {
-            // Magento's own handler already stored the cookie (it runs on the button, before document).
+        $(document).on(ALLOW_EVENT, function () {
+            // Magento's cookie notice triggers this after it stored the allow cookie.
             reloaded = false;
             publish();
             reload();

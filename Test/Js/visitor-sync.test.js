@@ -6,7 +6,7 @@ let factory;
 global.define = (deps, fn) => { factory = fn; };
 require('../../view/frontend/web/js/visitor-sync.js');
 
-function setup(initial, cookieAllowed) {
+function setup(initial, cookieAllowed, session = new Map(), lastRead) {
     const events = [];
     const reloads = [];
     const handlers = {};
@@ -16,10 +16,16 @@ function setup(initial, cookieAllowed) {
     // Mirrors the template shim: the cached section decides, anything else is denied.
     win.cw = { consentState: function () { return data && data.state === 'granted' ? 'granted' : 'denied'; }, __mgShim: true };
     win.addEventListener('cw:consent', (e) => events.push(e.detail.state));
+    if (lastRead !== undefined) { win.cw.__mgLast = lastRead; }
+    win.sessionStorage = {
+        getItem: (k) => (session.has(k) ? session.get(k) : null),
+        setItem: (k, v) => { session.set(k, v); }
+    };
+    win.navigator = {};
     global.window = win;
     global.document = {};
     global.CustomEvent = CustomEvent;
-    const $ = (target) => ({ on: (ev, sel, fn) => { handlers[ev + ' ' + sel] = fn; } });
+    const $ = (target) => ({ on: (ev, fn) => { handlers[ev] = fn; } });
     $.mage = { cookies: { get: () => (cookieAllowed.value ? '{"1":1}' : null) } };
     const section = () => data;
     section.subscribe = (fn) => { subscriber = fn; };
@@ -70,13 +76,13 @@ test('withdrawn consent: section still granted but cookie gone -> one reload, de
     assert.strictEqual(ctx.reloads.length, 1, 'no reload loop');
 });
 
-test('clicking Allow re-arms one reload and cw:consent fires when the new section arrives', () => {
+test('the Magento allow event re-arms one reload and cw:consent fires when the new section arrives', () => {
     const cookie = { value: false };
     const ctx = setup({ state: 'denied' }, cookie);
     ctx.init({ restriction: true });
     assert.strictEqual(ctx.reloads.length, 0);
     cookie.value = true;
-    ctx.handlers['click #btn-cookie-allow']();
+    ctx.handlers['user:allowed:save:cookie']();
     assert.strictEqual(ctx.reloads.length, 1);
     assert.deepStrictEqual(ctx.events, []);
     ctx.push({ state: 'granted' });
@@ -92,4 +98,33 @@ test('a foreign consentState implementation is never touched', () => {
     ctx.init({ restriction: true });
     ctx.push({ state: 'denied' });
     assert.deepStrictEqual(ctx.events, []);
+});
+
+test('a change since the embed last read is published even if the shim is already corrected at init', () => {
+    // The embed read 'granted' from a stale cache; by init the cache is cleared so the shim says denied.
+    const ctx = setup({ state: 'denied' }, { value: false }, new Map(), 'granted');
+    ctx.init({ restriction: true });
+    assert.deepStrictEqual(ctx.events, ['denied']);
+});
+
+test('a server-denied visitor with unchanged browser inputs causes no reload on the next page', () => {
+    const session = new Map();
+    const cookie = { value: true };
+    const first = setup({ state: 'denied' }, cookie, session);
+    first.init({ restriction: true });
+    assert.strictEqual(first.reloads.length, 1, 'first page reloads once and records the inputs');
+    const second = setup({ state: 'denied' }, cookie, session);
+    second.init({ restriction: true });
+    assert.strictEqual(second.reloads.length, 0);
+    cookie.value = false;
+    const third = setup({ state: 'granted' }, cookie, session);
+    third.init({ restriction: true });
+    assert.strictEqual(third.reloads.length, 1, 'a changed input reloads again');
+});
+
+test('an empty section always reloads once per page', () => {
+    const session = new Map([['cwax-visitor-inputs', '10']]);
+    const ctx = setup({}, { value: true }, session);
+    ctx.init({ restriction: true });
+    assert.strictEqual(ctx.reloads.length, 1);
 });

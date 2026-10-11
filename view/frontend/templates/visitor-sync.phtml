@@ -14,23 +14,33 @@ if (!$viewModel->isEnabled()) {
     return;
 }
 // Synchronous window.cw.consentState(): only ever 'granted' or 'denied'.
-// 1. A cached cwax-visitor section is the server's answer: 'granted' only when it says so.
-// 2. No cached section: mirror the vetoes the server resolver applies (global privacy control, Magento
-//    cookie restriction). The grant side depends on the collector consent mode and the admin fallback
-//    policy, which are server-only inputs, so without a cached section the answer is 'denied'.
+// 1. A cached cwax-visitor section is the server's answer, trusted only while Magento itself would
+//    keep it: the mage-cache-sessid cookie exists AND (restriction off OR the allow cookie exists).
+//    Otherwise customer-data is about to clear the storage, so the answer is 'denied'.
+//    Within that, 'granted' only when the section says so.
+// 2. No usable cached section: the grant side of the composite resolver (collector consent mode,
+//    snippet cookie, admin fallback policy) is server-only, so the answer is 'denied'.
+// The last returned value is kept in window.cw.__mgLast so the sync component can publish a change.
 $shimSource = <<<'JS'
 window.cw=window.cw||{};
 if(typeof window.cw.consentState!=='function'){
 window.cw.__mgShim=true;
-window.cw.consentState=function(){
+var compute=function(){
 try{
+var c=document.cookie;
+var usable=/(?:^|; )mage-cache-sessid=/.test(c)&&(!__RESTRICTION__||/(?:^|; )user_allowed_save_cookie=[^;]/.test(c));
+if(usable){
 var raw=window.localStorage.getItem('mage-cache-storage');
 var section=raw?JSON.parse(raw)['cwax-visitor']:null;
-if(section&&typeof section.state==='string'){return section.state==='granted'?'granted':'denied';}
+if(section&&section.state==='granted'){return 'granted';}
+}
 }catch(e){}
-if(window.navigator&&window.navigator.globalPrivacyControl===true){return 'denied';}
-if(__RESTRICTION__&&!/(?:^|; )user_allowed_save_cookie=[^;]/.test(document.cookie)){return 'denied';}
 return 'denied';
+};
+window.cw.consentState=function(){
+var v=compute();
+window.cw.__mgLast=v;
+return v;
 };}
 JS;
 $shim = str_replace('__RESTRICTION__', $viewModel->respectsRestriction() ? 'true' : 'false', $shimSource);
