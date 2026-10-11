@@ -9,7 +9,6 @@ use Cwax\Banner\Model\Lastmile\CollectorClient;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -21,16 +20,16 @@ class CollectorClientTest extends TestCase
     private array $headers = [];
     private ?string $postedUrl = null;
     private ?string $postedBody = null;
-    private MockObject&LoggerInterface $logger;
 
     private function client(
         int $status,
         string $body,
         string $url = 'https://collect.test/v1/session',
         ?\Throwable $throws = null,
-        string $token = ''
+        string $token = '',
+        ?LoggerInterface $logger = null
     ): CollectorClient {
-        $curl = $this->createMock(Curl::class);
+        $curl = $this->createStub(Curl::class);
         $curl->method('setOption')->willReturnCallback(function (int $key, $value): void {
             $this->options[$key] = $value;
         });
@@ -47,14 +46,13 @@ class CollectorClientTest extends TestCase
         $curl->method('getStatus')->willReturn($status);
         $curl->method('getBody')->willReturn($body);
 
-        $factory = $this->createMock(CurlFactory::class);
+        $factory = $this->createStub(CurlFactory::class);
         $factory->method('create')->willReturn($curl);
-        $config = $this->createMock(Config::class);
+        $config = $this->createStub(Config::class);
         $config->method('getSessionUrl')->willReturn($url);
         $config->method('getApiToken')->willReturn($token);
-        $this->logger = $this->createMock(LoggerInterface::class);
 
-        return new CollectorClient($factory, $config, $this->logger);
+        return new CollectorClient($factory, $config, $logger ?? $this->createStub(LoggerInterface::class));
     }
 
     public function testPostsMintOnlyWithShortTimeoutsAndForwardsIpAndUserAgent(): void
@@ -116,32 +114,60 @@ class CollectorClientTest extends TestCase
         $this->assertArrayNotHasKey('X-Forwarded-For', $this->headers);
     }
 
-    public function testSendsBearerTokenWhenConfiguredAndNeverLogsIt(): void
+    public function testSendsBearerTokenWhenConfigured(): void
     {
-        $client = $this->client(
-            503,
-            '',
-            'https://collect.test/v1/session',
-            null,
-            'secret-token'
-        );
-        $this->logger->expects($this->any())->method('info')->willReturnCallback(
-            function (string $message, array $context = []): void {
-                $this->assertStringNotContainsString('secret-token', $message . json_encode($context));
-            }
-        );
-
-        $client->session(1, [], '1.2.3.4', 'UA');
+        $this->client(503, '', 'https://collect.test/v1/session', null, 'secret-token')
+            ->session(1, [], '1.2.3.4', 'UA');
 
         $this->assertSame('Bearer secret-token', $this->headers['Authorization']);
     }
 
+    public function testFailureLogNeverContainsTheTokenHeadersOrBody(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('info')->with(
+            $this->callback(static fn (string $m): bool => !str_contains($m, 'secret-token')),
+            $this->callback(static function (array $context): bool {
+                $dump = json_encode($context);
+                return !str_contains($dump, 'secret-token')
+                    && !str_contains($dump, 'Authorization')
+                    && !str_contains($dump, 'visitor-123');
+            })
+        );
+        $client = $this->client(
+            0,
+            '',
+            'https://collect.test/v1/session',
+            new \RuntimeException('Operation timed out'),
+            'secret-token',
+            $logger
+        );
+
+        $this->assertNull($client->session(1, ['visitorId' => 'visitor-123'], '1.2.3.4', 'UA'));
+    }
+
+    public function testNonArrayDeviceDoesNotThrow(): void
+    {
+        $result = $this->client(200, '{"summary":"a.b"}')->session(1, ['device' => 'bogus'], null, 'UA');
+
+        $this->assertSame('a.b', $result['summary']);
+        $this->assertSame(['ua' => 'UA'], json_decode((string) $this->postedBody, true)['device']);
+    }
+
     public function testUnauthorizedLogsOneConfigurationWarningWithoutTheToken(): void
     {
-        $client = $this->client(401, '{"error":"invalid credentials"}', 'https://collect.test/v1/session', null, 'secret-token');
-        $this->logger->expects($this->once())->method('warning')->with(
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
             $this->callback(static fn (string $m): bool => !str_contains($m, 'secret-token')),
             $this->callback(static fn (array $c): bool => !str_contains(json_encode($c), 'secret-token'))
+        );
+        $client = $this->client(
+            401,
+            '{"error":"invalid credentials"}',
+            'https://collect.test/v1/session',
+            null,
+            'secret-token',
+            $logger
         );
 
         $this->assertNull($client->session(1, [], '1.2.3.4', 'UA'));
@@ -173,9 +199,9 @@ class CollectorClientTest extends TestCase
     {
         $factory = $this->createMock(CurlFactory::class);
         $factory->expects($this->never())->method('create');
-        $config = $this->createMock(Config::class);
+        $config = $this->createStub(Config::class);
         $config->method('getSessionUrl')->willReturn('');
-        $client = new CollectorClient($factory, $config, $this->createMock(LoggerInterface::class));
+        $client = new CollectorClient($factory, $config, $this->createStub(LoggerInterface::class));
 
         $this->assertNull($client->session(1, [], '1.2.3.4', 'UA'));
     }

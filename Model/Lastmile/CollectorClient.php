@@ -16,7 +16,7 @@ class CollectorClient
 {
     private const CONNECT_TIMEOUT_MS = 200;
     private const TOTAL_TIMEOUT_MS = 300;
-    // The collector ignores device.ua above this length.
+    // Caps at the collector's accepted length (1024); it ignores a longer device.ua.
     private const MAX_USER_AGENT_LENGTH = 1024;
 
     public function __construct(
@@ -42,19 +42,21 @@ class CollectorClient
             return null;
         }
 
-        // Mint calls make the collector write no rows. The collector parses the raw user agent itself.
-        $body['mintOnly'] = true;
-        unset($body['claimsOnly'], $body['device']['deviceType']);
-        if ($userAgent !== '') {
-            $body['device']['ua'] = substr($userAgent, 0, self::MAX_USER_AGENT_LENGTH);
-        } else {
-            unset($body['device']['ua']);
-        }
-        if (isset($body['device']) && $body['device'] === []) {
-            unset($body['device']);
-        }
-
         try {
+            // Mint calls make the collector write no rows. The collector parses the raw user agent itself.
+            $body['mintOnly'] = true;
+            unset($body['claimsOnly']);
+            $device = is_array($body['device'] ?? null) ? $body['device'] : [];
+            unset($device['deviceType'], $device['ua']);
+            if ($userAgent !== '') {
+                $device['ua'] = substr($userAgent, 0, self::MAX_USER_AGENT_LENGTH);
+            }
+            if ($device === []) {
+                unset($body['device']);
+            } else {
+                $body['device'] = $device;
+            }
+
             $curl = $this->curlFactory->create();
             $curl->setOption(CURLOPT_CONNECTTIMEOUT_MS, self::CONNECT_TIMEOUT_MS);
             $curl->setOption(CURLOPT_TIMEOUT_MS, self::TOTAL_TIMEOUT_MS);
