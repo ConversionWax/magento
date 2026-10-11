@@ -22,26 +22,28 @@ if (!$viewModel->isEnabled()) {
 //    snippet cookie, admin fallback policy) is server-only, so the answer is 'denied'.
 // The last returned value is kept in window.cw.__mgLast so the sync component can publish a change.
 $shimSource = <<<'JS'
-window.cw=window.cw||{};
-if(typeof window.cw.consentState!=='function'){
-window.cw.__mgShim=true;
+(function(w,d){
+w.cw=w.cw||{};
+if(typeof w.cw.consentState==='function'){return;}
+w.cw.__mgShim=true;
 var compute=function(){
 try{
-var c=document.cookie;
+var c=d.cookie;
 var usable=/(?:^|; )mage-cache-sessid=/.test(c)&&(!__RESTRICTION__||/(?:^|; )user_allowed_save_cookie=[^;]/.test(c));
 if(usable){
-var raw=window.localStorage.getItem('mage-cache-storage');
+var raw=w.localStorage.getItem('mage-cache-storage');
 var section=raw?JSON.parse(raw)['cwax-visitor']:null;
 if(section&&section.state==='granted'){return 'granted';}
 }
 }catch(e){}
 return 'denied';
 };
-window.cw.consentState=function(){
+w.cw.consentState=function(){
 var v=compute();
-window.cw.__mgLast=v;
+w.cw.__mgLast=v;
 return v;
-};}
+};
+})(window,document);
 JS;
 $shim = str_replace('__RESTRICTION__', $viewModel->respectsRestriction() ? 'true' : 'false', $shimSource);
 ?>

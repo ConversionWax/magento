@@ -27,6 +27,17 @@ function run({ restriction, storage, cookie = '', gpc, cw }) {
     return win.cw;
 }
 
+function runContext(opts) {
+    // Same as run() but returns the context so globals can be inspected and overwritten.
+    const win = { navigator: {} };
+    win.window = win;
+    win.document = { cookie: opts.cookie };
+    win.localStorage = { getItem: () => opts.storage };
+    const before = new Set(Object.keys(win));
+    vm.runInNewContext(source.replace('__RESTRICTION__', 'true'), win);
+    return { win, before };
+}
+
 test('cached granted section is trusted with the session cookie and the allow cookie', () => {
     const cw = run({ restriction: true, cookie: SESS + ALLOW, storage: JSON.stringify({ 'cwax-visitor': { state: 'granted' } }) });
     assert.strictEqual(cw.__mgShim, true);
@@ -74,4 +85,17 @@ test('an existing consentState implementation is left alone', () => {
     const cw = run({ restriction: true, cw: foreign });
     assert.strictEqual(cw, foreign);
     assert.strictEqual(cw.__mgShim, undefined);
+});
+
+test('the shim adds no global except cw and ignores host globals named compute', () => {
+    const granted = JSON.stringify({ 'cwax-visitor': { state: 'granted' } });
+    const { win, before } = runContext({ cookie: SESS + ALLOW, storage: granted });
+    const added = Object.keys(win).filter((k) => !before.has(k));
+    assert.deepStrictEqual(added, ['cw']);
+    for (const hostile of [() => 'pending', 1, undefined]) {
+        win.compute = hostile;
+        let value;
+        assert.doesNotThrow(() => { value = win.cw.consentState(); });
+        assert.strictEqual(value, 'granted');
+    }
 });
