@@ -206,14 +206,19 @@ class EventQueue
         return $remoteAddr !== '' ? substr($remoteAddr, 0, 64) : null;
     }
 
-    public function markPurchased(): void
+    /**
+     * @param array{orderId?:string,value?:float|int,currency?:string} $purchase
+     */
+    public function markPurchased(array $purchase = []): void
     {
         try {
             $storeId = (int) $this->storeManager->getStore()->getId();
-            if (!$this->resolveConsent($storeId)->isStorageGranted()) {
+            if (!$this->config->isConfigured($storeId)
+                || !$this->resolveConsent($storeId)->isStorageGranted()
+            ) {
                 return;
             }
-            $this->visitorContext->markPurchased();
+            $this->visitorContext->markPurchased($purchase);
         } catch (\Throwable $exception) {
             $this->logger->warning('ConversionWax Last Mile could not update purchase context.', [
                 'exception' => $exception,
