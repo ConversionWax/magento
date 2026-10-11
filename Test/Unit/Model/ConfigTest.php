@@ -39,10 +39,20 @@ class ConfigTest extends TestCase
                 'https://dev.collect.conversionwax.com/v1/session',
             ],
             'custom port and trailing slash' => [
-                'https://collector.example.test:8443/v1/integrations/magento/events/',
-                'https://collector.example.test:8443/v1/session',
+                'https://dev.collect.conversionwax.com:8443/v1/integrations/magento/events/',
+                'https://dev.collect.conversionwax.com:8443/v1/session',
             ],
-            'plain http is refused' => ['http://collector.example.test/v1/x', ''],
+            'uppercase host is lowercased' => [
+                'https://Collect.ConversionWax.com/v1/integrations/magento/events',
+                'https://collect.conversionwax.com/v1/session',
+            ],
+            'foreign host is refused' => ['https://evil.example/v1/x', ''],
+            'allowed name as subdomain of foreign host' => [
+                'https://collect.conversionwax.com.evil.com/v1/x',
+                '',
+            ],
+            'userinfo trick' => ['https://collect.conversionwax.com@evil.com/v1/x', ''],
+            'plain http is refused' => ['http://collect.conversionwax.com/v1/x', ''],
             'empty endpoint' => ['', ''],
             'garbage' => ['not a url', ''],
         ];

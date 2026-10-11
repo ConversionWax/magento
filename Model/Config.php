@@ -51,19 +51,23 @@ class Config
     }
 
     /**
-     * The collector session endpoint lives on the same host as the configured events endpoint.
+     * The collector session endpoint lives on the same (allowlisted) host as the configured events endpoint.
      *
      * @param int $storeId
      * @return string
      */
     public function getSessionUrl(int $storeId): string
     {
-        $parts = parse_url($this->getEndpoint($storeId));
-        if (!is_array($parts) || ($parts['scheme'] ?? '') !== 'https' || ($parts['host'] ?? '') === '') {
+        $endpoint = $this->getEndpoint($storeId);
+        if (!$this->isAllowedEndpoint($endpoint)) {
+            return '';
+        }
+        $parts = parse_url($endpoint);
+        if (!is_array($parts) || ($parts['host'] ?? '') === '') {
             return '';
         }
 
-        return 'https://' . $parts['host']
+        return 'https://' . strtolower($parts['host'])
             . (isset($parts['port']) ? ':' . $parts['port'] : '')
             . '/v1/session';
     }
