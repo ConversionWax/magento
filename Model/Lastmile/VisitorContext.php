@@ -36,6 +36,8 @@ class VisitorContext
     private ?array $context = null;
     private bool $unresolved = false;
     private ?bool $cacheable = null;
+    /** @var string|null what the last persist() wrote, so a repeat flush() sends no duplicate Set-Cookie */
+    private ?string $persisted = null;
 
     public function __construct(
         private readonly CookieManagerInterface $cookieManager,
@@ -261,8 +263,10 @@ class VisitorContext
 
     /**
      * Writes the identity cookies, if any identity was resolved this request
-     * and the response has turned out to be genuinely uncacheable. Must be
-     * called once, late, at controller_front_send_response_before, after
+     * and the response has turned out to be genuinely uncacheable. Called
+     * late, at controller_front_send_response_before (and by the cwax-visitor
+     * section, which has declared its response uncacheable); a repeat call
+     * with unchanged state writes nothing. The late call runs after
      * Magento's page cache plugin has finalized the Cache-Control header -
      * calling isCacheableResponse() directly here rather than through the
      * memoized resolveCacheable() so a stale reading from an earlier,
@@ -360,6 +364,11 @@ class VisitorContext
         }
 
         try {
+            $encoded = $this->encodeState($this->context);
+            $signature = $this->context['visitorId'] . '|' . $encoded;
+            if ($signature === $this->persisted) {
+                return;
+            }
             $visitorMetadata = $this->cookieMetadataFactory->createPublicCookieMetadata()
                 ->setDuration(self::COOKIE_DURATION)
                 ->setPath('/')
@@ -382,9 +391,10 @@ class VisitorContext
                 ->setSameSite('Lax');
             $this->cookieManager->setPublicCookie(
                 self::SESSION_COOKIE,
-                $this->encodeState($this->context),
+                $encoded,
                 $sessionMetadata
             );
+            $this->persisted = $signature;
         } catch (\Throwable $exception) {
             $this->logger->warning('ConversionWax Last Mile could not persist visitor context.', [
                 'exception' => $exception,

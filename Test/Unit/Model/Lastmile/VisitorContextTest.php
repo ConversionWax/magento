@@ -24,14 +24,22 @@ class VisitorContextTest extends TestCase
 
     private const VISITOR_COOKIE_NAME = '_cwid';
 
-    /** A fresh VisitorContext per call simulates a fresh request reading the shared cookie jar. */
-    private function context(): VisitorContext
+    /** @var string[] names of every Set-Cookie written, in order */
+    private array $setCookies = [];
+
+    /**
+     * A fresh VisitorContext per call simulates a fresh request reading the shared cookie jar.
+     *
+     * @param string|null $cacheControl the response's Cache-Control, or null for no header yet
+     */
+    private function context(?string $cacheControl = 'no-store'): VisitorContext
     {
         $manager = $this->createStub(CookieManagerInterface::class);
         $manager->method('getCookie')->willReturnCallback(fn (string $n) => $this->jar[$n] ?? null);
         $manager->method('setPublicCookie')->willReturnCallback(
             function (string $name, string $value): void {
                 $this->jar[$name] = $value;
+                $this->setCookies[] = $name;
             }
         );
         $factory = $this->createStub(CookieMetadataFactory::class);
@@ -41,9 +49,11 @@ class VisitorContextTest extends TestCase
         $request = $this->createStub(Http::class);
         $request->method('getUriString')->willReturn('https://shop.test/');
         $request->method('getServer')->willReturn(null);
-        // A known-uncacheable response, so identity can be minted and flush() writes cookies.
+        // Default: a known-uncacheable response, so identity can be minted and flush() writes cookies.
         $headers = new Headers();
-        $headers->addHeader(new GenericHeader('Cache-Control', 'no-store'));
+        if ($cacheControl !== null) {
+            $headers->addHeader(new GenericHeader('Cache-Control', $cacheControl));
+        }
         $response = $this->createStub(ResponseHttp::class);
         $response->method('getHeaders')->willReturn($headers);
 
@@ -132,5 +142,79 @@ class VisitorContextTest extends TestCase
         $this->purchase($this->context(), ['orderId' => 'A1', 'value' => 1.0, 'currency' => 'DOLLARS']);
 
         $this->assertArrayNotHasKey('pp', $this->decodedMagentoSession());
+    }
+
+    public function testACachedPageRenderNeverMintsAVisitorOrWritesCookies(): void
+    {
+        $this->jar = [];
+        $context = $this->context('public, max-age=86400, s-maxage=86400');
+
+        $this->assertNull($context->get());
+        $context->flush();
+        $this->assertSame([], $this->setCookies);
+    }
+
+    public function testACachedPageRenderNeverMintsASessionForAKnownVisitor(): void
+    {
+        $context = $this->context('public, max-age=86400');
+
+        $this->assertNull($context->get());
+        $this->assertArrayNotHasKey('_cwms', $this->jar);
+    }
+
+    public function testUnknownCacheabilityNeverMints(): void
+    {
+        $this->jar = [];
+
+        $this->assertNull($this->context(null)->get());
+    }
+
+    public function testAKnownUncacheableResponseMintsVisitorAndSession(): void
+    {
+        $this->jar = [];
+        $context = $this->context('max-age=0, must-revalidate, no-cache, no-store');
+
+        $identity = $context->get();
+        $context->flush();
+
+        $this->assertIsArray($identity);
+        $this->assertTrue($identity['isNew']);
+        $this->assertSame($identity['visitorId'], $this->jar['_cwid']);
+        $this->assertSame($identity['sessionId'], $this->decodedMagentoSession()['sid']);
+    }
+
+    public function testARepeatedFlushWithUnchangedStateWritesNoSecondSetCookie(): void
+    {
+        $context = $this->context();
+        $context->get();
+
+        $context->flush();
+        $context->flush();
+        $this->assertSame(['_cwid', '_cwms'], $this->setCookies);
+
+        // A real change after the first flush is still written.
+        $context->markPurchased(['orderId' => '100', 'value' => 5, 'currency' => 'USD']);
+        $context->flush();
+        $this->assertSame(['_cwid', '_cwms', '_cwid', '_cwms'], $this->setCookies);
+    }
+
+    public function testARestCheckoutResponseWithNoCacheControlPersistsThePendingPurchase(): void
+    {
+        // The visitor already has identity from the section. The REST response object VisitorContext
+        // sees carries no Cache-Control at all; at flush time that means uncacheable.
+        $section = $this->context();
+        $section->get();
+        $section->flush();
+        $this->setCookies = [];
+
+        $rest = $this->context(null);
+        $rest->markPurchased(['orderId' => '000000042', 'value' => 19.5, 'currency' => 'usd']);
+        $rest->flush();
+
+        $this->assertContains('_cwms', $this->setCookies);
+        $session = $this->decodedMagentoSession();
+        $this->assertSame(1, $session['hp']);
+        $this->assertSame('000000042', $session['pp']['o']);
+        $this->assertSame('USD', $session['pp']['c']);
     }
 }
