@@ -52,7 +52,42 @@ views served from Magento's built-in full-page cache, but product classification
 controller dispatch. A response served entirely upstream by Varnish, Fastly, or another CDN never
 reaches Magento PHP, so neither view event is visible. Cart, checkout, login, and purchase requests
 still reach Magento. Exact upstream-cache coverage requires a future server-side edge-log adapter.
-The module does not silently add a browser sender.
+The module does not silently add a browser event sender. It does add one AJAX customer-data section, described below.
+
+## Visitor cookies and consent (Last Mile personalization)
+
+The module produces the shared first-party cookies `_cwid`, `_cws`, and `_cwvs` so the ConversionWax
+embed can target by visit history. They come from a `cwax-visitor` private-content section, which
+Magento loads by AJAX after the page (`/customer/section/load/?sections=cwax-visitor`). That keeps
+the cookies out of full-page cache (built-in and Varnish): cached HTML is identical for every
+visitor and never contains a visitor id, claims, or order data. The section response itself is
+never cacheable (`Cache-Control: no-store`).
+
+- The section does nothing unless Magento's own Cookie Restriction Mode allows it (Stores >
+  Configuration > General > Web > Default Cookie Settings). With restriction on, until the visitor
+  clicks Allow the section answers `denied` and deletes any `_cwid`, `_cwms`, `_cws`, `_cwvs`
+  cookies. With restriction off, the section runs for every visitor. The section answers `off` and
+  does nothing when the integration is not configured.
+- When allowed, the section calls the collector `POST /v1/session` on the same host as the events
+  endpoint, from Magento, with a 300 ms limit. It forwards the visitor IP and user agent (for geo
+  and device only) and reuses `_cwid`. The call authenticates with the integration API token as an
+  `Authorization: Bearer` header, the same token the event consumer uses (contract C9). The token
+  never reaches the browser. On any failure the section writes no cookies and the embed shows
+  fallback content. The call happens at most once per Magento session, plus once after an order.
+- `window.cw.consentState()` answers synchronously (`'granted'` or `'denied'`) and the event
+  `cw:consent` fires on each change. The embed uses these. The shim only trusts a cached
+  `cwax-visitor` section when the `mage-cache-sessid` cookie exists and, under restriction, the
+  `user_allowed_save_cookie` allow cookie exists too. Otherwise it answers `denied`.
+- On the very first page view the shim has no cached section, so it answers `denied` and the embed
+  shows fallback content. The cookies are written by the section after the page renders, so claims
+  apply from the next page view.
+- Placing an order invalidates the section, so the next page carries the buyer claims (`hp`, `lp`).
+  Login and registration invalidate it too.
+- In release 1 the `organic` and `referral` traffic mediums are not classified on Magento. The
+  session cookie carries the source and medium the collector returns and nothing more.
+
+Each section call is one short PHP request. If the collector is slow, visitors see no delay on page
+render, only a later cookie.
 
 ## Install or upgrade
 
