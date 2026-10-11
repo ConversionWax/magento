@@ -206,6 +206,35 @@ class VisitorSyncServiceTest extends TestCase
         $this->assertSame('/customer/section/load/', $this->calls[0]['body']['arrival']['url']);
     }
 
+    public function testDeviceIsOmittedEntirelyWhenTheUserAgentIsEmpty(): void
+    {
+        $service = $this->service(
+            ['pendingPurchase' => self::PENDING],
+            server: ['HTTP_USER_AGENT' => ''],
+            mocks: ['cookies']
+        );
+        $this->respond([['summary' => 'new.sig'], ['summary' => 'bought.sig']]);
+
+        $service->sync(1);
+
+        $this->assertCount(2, $this->calls);
+        $this->assertArrayNotHasKey('device', $this->calls[0]['body']);
+        $this->assertArrayNotHasKey('device', $this->calls[1]['body']);
+    }
+
+    public function testAPortInTheHostHeaderDoesNotBreakTheSameHostRefererCheck(): void
+    {
+        $service = $this->service(
+            server: ['HTTP_HOST' => 'shop.test:8443', 'HTTP_REFERER' => 'https://shop.test/sale?utm_source=x&token=1'],
+            mocks: ['cookies']
+        );
+        $this->respond([['summary' => 'new.sig']]);
+
+        $service->sync(1);
+
+        $this->assertSame('/sale?utm_source=x', $this->calls[0]['body']['arrival']['url']);
+    }
+
     public function testAReturningVisitorEchoesTheExistingSummaryOnANewSession(): void
     {
         $service = $this->service([], 'old.sig', '99999999-9999-4999-8999-999999999999', mocks: ['cookies']);

@@ -114,9 +114,8 @@ class VisitorSyncService
                 'ts' => $startedAt,
                 'isLanding' => true,
             ],
-            'device' => $this->device(),
             'sdk' => ['v' => self::SDK_VERSION],
-        ];
+        ] + $this->deviceField();
     }
 
     /**
@@ -147,9 +146,8 @@ class VisitorSyncService
                 'productIds' => [],
                 'ts' => $pending['ts'],
             ],
-            'device' => $this->device(),
             'sdk' => ['v' => self::SDK_VERSION],
-        ];
+        ] + $this->deviceField();
     }
 
     /**
@@ -193,7 +191,7 @@ class VisitorSyncService
     {
         $referer = $this->request->getServer('HTTP_REFERER');
         $parts = is_string($referer) && $referer !== '' ? parse_url(substr($referer, 0, 2048)) : false;
-        $host = (string) $this->request->getServer('HTTP_HOST');
+        $host = (string) preg_replace('/:\d+$/', '', (string) $this->request->getServer('HTTP_HOST'));
         if ($parts === false
             || !in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
             || strcasecmp((string) ($parts['host'] ?? ''), $host) !== 0
@@ -218,13 +216,13 @@ class VisitorSyncService
         return substr(($parts['path'] ?? '/') . $query, 0, 2048);
     }
 
-    /** @return array<string, string> */
-    private function device(): array
+    /** @return array{device?: array{ua: string}} the key is omitted entirely when the user agent is empty */
+    private function deviceField(): array
     {
         // The collector parses the raw user agent itself (X8): device.ua only.
         $ua = $this->userAgent();
 
-        return $ua === '' ? [] : ['ua' => $ua];
+        return $ua === '' ? [] : ['device' => ['ua' => $ua]];
     }
 
     private function userAgent(): string
