@@ -1,0 +1,41 @@
+<?php
+/**
+ * Static for every visitor of a store view. Defines the consent API early (contract C3) and starts
+ * the sync component. The only server value is the store-level cookie restriction flag.
+ *
+ * @var \Magento\Framework\View\Element\Template $block
+ * @var \Magento\Framework\View\Helper\SecureHtmlRenderer $secureRenderer
+ */
+declare(strict_types=1);
+
+/** @var \Cwax\Banner\ViewModel\VisitorSync $viewModel */
+$viewModel = $block->getData('view_model');
+if (!$viewModel->isEnabled()) {
+    return;
+}
+// Synchronous window.cw.consentState(): only ever 'granted' or 'denied'.
+// 1. A cached cwax-visitor section is the server's answer: 'granted' only when it says so.
+// 2. No cached section: mirror the vetoes the server resolver applies (global privacy control, Magento
+//    cookie restriction). The grant side depends on the collector consent mode and the admin fallback
+//    policy, which are server-only inputs, so without a cached section the answer is 'denied'.
+$shimSource = <<<'JS'
+window.cw=window.cw||{};
+if(typeof window.cw.consentState!=='function'){
+window.cw.__mgShim=true;
+window.cw.consentState=function(){
+try{
+var raw=window.localStorage.getItem('mage-cache-storage');
+var section=raw?JSON.parse(raw)['cwax-visitor']:null;
+if(section&&typeof section.state==='string'){return section.state==='granted'?'granted':'denied';}
+}catch(e){}
+if(window.navigator&&window.navigator.globalPrivacyControl===true){return 'denied';}
+if(__RESTRICTION__&&!/(?:^|; )user_allowed_save_cookie=[^;]/.test(document.cookie)){return 'denied';}
+return 'denied';
+};}
+JS;
+$shim = str_replace('__RESTRICTION__', $viewModel->respectsRestriction() ? 'true' : 'false', $shimSource);
+?>
+<?= /* @noEscape */ $secureRenderer->renderTag('script', [], $shim, false) ?>
+<script type="text/x-magento-init">
+{"*": {"Cwax_Banner/js/visitor-sync": <?= /* @noEscape */ $viewModel->getConfigJson() ?>}}
+</script>

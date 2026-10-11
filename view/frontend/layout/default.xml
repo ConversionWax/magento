@@ -3,4 +3,15 @@
     <head>
         <script src="https://assets.conversionwax.com/dist/app.js" src_type="url" defer="defer" />
     </head>
+    <body>
+        <referenceContainer name="head.additional">
+            <block class="Magento\Framework\View\Element\Template"
+                   name="cwax.visitor.sync"
+                   template="Cwax_Banner::visitor-sync.phtml">
+                <arguments>
+                    <argument name="view_model" xsi:type="object">Cwax\Banner\ViewModel\VisitorSync</argument>
+                </arguments>
+            </block>
+        </referenceContainer>
+    </body>
 </page>
