@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Cwax\Banner\Model\Lastmile;
 
 use Cwax\Banner\Api\ConsentResolverInterface;
-use Magento\Framework\App\Request\Http;
 use Magento\Framework\Stdlib\Cookie\CookieMetadataFactory;
 use Magento\Framework\Stdlib\CookieManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -28,7 +27,6 @@ class VisitorCookies
     public function __construct(
         private readonly CookieManagerInterface $cookieManager,
         private readonly CookieMetadataFactory $cookieMetadataFactory,
-        private readonly Http $request,
         private readonly ConsentResolverInterface $consentResolver,
         private readonly LoggerInterface $logger
     ) {
@@ -122,7 +120,8 @@ class VisitorCookies
         try {
             $metadata = $this->cookieMetadataFactory->createPublicCookieMetadata()
                 ->setPath('/')
-                ->setSecure($this->request->isSecure())
+                // Always Secure (cookie contract), exactly as VisitorContext writes _cwid and _cwms.
+                ->setSecure(true)
                 ->setHttpOnly(false)
                 ->setSameSite('Lax');
             if ($durationSeconds !== null) {

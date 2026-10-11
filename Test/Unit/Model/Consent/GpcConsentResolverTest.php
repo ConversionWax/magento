@@ -6,7 +6,9 @@ namespace Cwax\Banner\Test\Unit\Model\Consent;
 
 use Cwax\Banner\Api\Data\ConsentDecisionInterface;
 use Cwax\Banner\Model\Consent\GpcConsentResolver;
+use Magento\Framework\App\Request\Http;
 use Magento\Framework\App\RequestInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -24,7 +26,8 @@ class GpcConsentResolverTest extends TestCase
 
     private function requestWithHeader(?string $value): RequestInterface
     {
-        $request = $this->createMock(RequestInterface::class);
+        // getServer() is not on RequestInterface; the storefront request is Request\Http.
+        $request = $this->createMock(Http::class);
         $request->method('getServer')
             ->with('HTTP_SEC_GPC')
             ->willReturn($value);
@@ -54,9 +57,7 @@ class GpcConsentResolverTest extends TestCase
         $this->assertSame([], $decision->getDenialReasons());
     }
 
-    /**
-     * @dataProvider nonSignalHeaderValueProvider
-     */
+    #[DataProvider('nonSignalHeaderValueProvider')]
     public function testNonSignalHeaderValuesAbstain(string $headerValue): void
     {
         $resolver = $this->makeResolver($this->requestWithHeader($headerValue));

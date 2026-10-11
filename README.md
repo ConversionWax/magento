@@ -75,14 +75,20 @@ never cacheable (`Cache-Control: no-store`).
   never reaches the browser. On any failure the section writes no cookies and the embed shows
   fallback content. The call happens at most once per Magento session, plus once after an order.
 - `window.cw.consentState()` answers synchronously (`'granted'` or `'denied'`) and the event
-  `cw:consent` fires on each change. The embed uses these. The shim only trusts a cached
-  `cwax-visitor` section when the `mage-cache-sessid` cookie exists and, under restriction, the
-  `user_allowed_save_cookie` allow cookie exists too. Otherwise it answers `denied`.
+  `cw:consent` fires on each change. The embed uses these. With Global Privacy Control on
+  (`navigator.globalPrivacyControl === true`) the shim answers `denied` before it looks at any
+  cache. Otherwise it only trusts a cached `cwax-visitor` section when the `mage-cache-sessid`
+  cookie exists and, under restriction, the `user_allowed_save_cookie` allow cookie exists too.
+  Otherwise it answers `denied`. When the cookie choice or GPC changes, the module reloads the
+  section once.
+- If the store also installs the ConversionWax browser snippet (`lm.js`), the snippet's own
+  `consentState` replaces the shim. The shim installs only when no `window.cw.consentState()` exists
+  yet, and the module never overrides another implementation.
 - On the very first page view the shim has no cached section, so it answers `denied` and the embed
   shows fallback content. The cookies are written by the section after the page renders, so claims
   apply from the next page view.
-- Placing an order invalidates the section, so the next page carries the buyer claims (`hp`, `lp`).
-  Login and registration invalidate it too.
+- Placing an order (REST checkout, guest or logged in) invalidates the section, so the next page
+  carries the buyer claims (`hp`, `lp`).
 - In release 1 the `organic` and `referral` traffic mediums are not classified on Magento. The
   session cookie carries the source and medium the collector returns and nothing more.
 

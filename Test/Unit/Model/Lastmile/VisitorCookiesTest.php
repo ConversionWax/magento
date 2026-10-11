@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Cwax\Banner\Test\Unit\Model\Lastmile;
 
 use Cwax\Banner\Model\Lastmile\VisitorCookies;
-use Magento\Framework\App\Request\Http;
 use Magento\Framework\Stdlib\Cookie\CookieMetadata;
 use Magento\Framework\Stdlib\Cookie\CookieMetadataFactory;
 use Magento\Framework\Stdlib\Cookie\PublicCookieMetadata;
@@ -26,7 +25,7 @@ class VisitorCookiesTest extends TestCase
     /** @var string[] */
     private array $deleted = [];
 
-    private function cookies(bool $secure = true, bool $storage = true): VisitorCookies
+    private function cookies(bool $storage = true): VisitorCookies
     {
         $manager = $this->createMock(CookieManagerInterface::class);
         $manager->method('getCookie')->willReturnCallback(
@@ -51,9 +50,6 @@ class VisitorCookiesTest extends TestCase
         $factory->method('createCookieMetadata')->willReturnCallback(
             static fn (): CookieMetadata => new CookieMetadata()
         );
-        $request = $this->createMock(Http::class);
-        $request->method('isSecure')->willReturn($secure);
-
         $consent = $this->createMock(ConsentResolverInterface::class);
         $consent->method('resolve')->willReturn(
             new ConsentDecision([ConsentDecisionInterface::SIGNAL_STORAGE => $storage])
@@ -62,7 +58,6 @@ class VisitorCookiesTest extends TestCase
         return new VisitorCookies(
             $manager,
             $factory,
-            $request,
             $consent,
             $this->createMock(LoggerInterface::class)
         );
@@ -144,11 +139,17 @@ class VisitorCookiesTest extends TestCase
         $this->assertSame($session, json_decode($this->jar['_cws'], true));
     }
 
-    public function testSecureFollowsTheRequestScheme(): void
+    public function testCookiesAreAlwaysSecure(): void
     {
-        $this->cookies(false)->writeSummary('abc.def', 1);
+        // Contract: Secure regardless of the request scheme (eg TLS terminated at a proxy).
+        $cookies = $this->cookies();
+        $cookies->writeSummary('abc.def', 1);
+        $cookies->writeSession(
+            ['sid' => 'abcdefgh1234', 'st' => 1, 'la' => 1, 'pv' => 1, 'src' => 'direct', 'med' => 'direct']
+        );
 
-        $this->assertFalse($this->written['_cwvs']->getSecure());
+        $this->assertTrue($this->written['_cwvs']->getSecure());
+        $this->assertTrue($this->written['_cws']->getSecure());
     }
 
     public function testClearAllDeletesOnlyCookiesThatExist(): void
@@ -164,7 +165,7 @@ class VisitorCookiesTest extends TestCase
     {
         $this->jar['_cwvs'] = 'old.sig';
 
-        $this->cookies(true, false)->writeSummary('abc.def', 1);
+        $this->cookies(false)->writeSummary('abc.def', 1);
 
         $this->assertArrayNotHasKey('_cwvs', $this->written);
         $this->assertSame(['_cwvs'], $this->deleted);
@@ -173,7 +174,7 @@ class VisitorCookiesTest extends TestCase
 
     public function testWriteSummaryWithoutConsentAndNoCookieDeletesNothing(): void
     {
-        $this->cookies(true, false)->writeSummary('abc.def', 1);
+        $this->cookies(false)->writeSummary('abc.def', 1);
 
         $this->assertSame([], $this->written);
         $this->assertSame([], $this->deleted);
