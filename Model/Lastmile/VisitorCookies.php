@@ -22,7 +22,8 @@ class VisitorCookies
     public const SUMMARY = '_cwvs';
 
     private const PERSISTENT_SECONDS = 34560000;
-    private const SUMMARY_PATTERN = '/^[A-Za-z0-9_-]{1,2100}\.[A-Za-z0-9_-]{1,128}$/';
+    private const SUMMARY_PATTERN = '/^[A-Za-z0-9_-]{1,2100}\.[A-Za-z0-9_-]{1,128}$/D';
+    private const SESSION_ID_PATTERN = '/^[A-Za-z0-9_-]{8,64}$/D';
 
     public function __construct(
         private readonly CookieManagerInterface $cookieManager,
@@ -54,7 +55,9 @@ class VisitorCookies
             $decoded = json_decode(rawurldecode($raw), true);
         }
 
-        return is_array($decoded) && is_string($decoded['sid'] ?? null) ? $decoded['sid'] : null;
+        $sid = is_array($decoded) ? ($decoded['sid'] ?? null) : null;
+
+        return is_string($sid) && preg_match(self::SESSION_ID_PATTERN, $sid) === 1 ? $sid : null;
     }
 
     /**
@@ -74,11 +77,16 @@ class VisitorCookies
     /** @param array{sid:string,st:int,la:int,pv:int,src:string,med:string,geo?:string} $session */
     public function writeSession(array $session): void
     {
-        $this->write(
-            self::SESSION,
-            json_encode($session, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
-            null
-        );
+        try {
+            $json = json_encode($session, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        } catch (\JsonException $exception) {
+            $this->logger->warning('ConversionWax Last Mile could not encode the session cookie.', [
+                'exception' => $exception,
+            ]);
+
+            return;
+        }
+        $this->write(self::SESSION, $json, null);
     }
 
     /**

@@ -91,6 +91,7 @@ class VisitorCookiesTest extends TestCase
             'two dots' => ['a.b.c'],
             'script' => ['<script>.x'],
             'too long' => [str_repeat('a', 2200) . '.sig'],
+            'trailing newline' => ["abc.def\n"],
             'empty' => [''],
         ];
     }
@@ -176,5 +177,38 @@ class VisitorCookiesTest extends TestCase
 
         $this->assertSame([], $this->written);
         $this->assertSame([], $this->deleted);
+    }
+
+    public function testWriteSessionWithInvalidUtf8WritesNothingAndDoesNotThrow(): void
+    {
+        $this->cookies()->writeSession([
+            'sid' => '11111111-1111-4111-8111-111111111111',
+            'st' => 1,
+            'la' => 1,
+            'pv' => 1,
+            'src' => "bad\xB1utf8",
+            'med' => 'organic',
+        ]);
+
+        $this->assertArrayNotHasKey('_cws', $this->written);
+        $this->assertArrayNotHasKey('_cws', $this->jar);
+    }
+
+    public function testGetSessionIdRejectsMalformedSid(): void
+    {
+        $this->jar['_cws'] = '{"sid":"<script>alert(1)</script>","st":1}';
+        $this->assertNull($this->cookies()->getSessionId());
+
+        $this->jar['_cws'] = '{"sid":123,"st":1}';
+        $this->assertNull($this->cookies()->getSessionId());
+    }
+
+    public function testClearAllRemovesTheSessionCookie(): void
+    {
+        $this->jar = ['_cws' => '{"sid":"11111111-1111-4111-8111-111111111111"}'];
+
+        $this->cookies()->clearAll();
+
+        $this->assertSame(['_cws'], $this->deleted);
     }
 }
