@@ -50,6 +50,24 @@ class Config
         )), '/');
     }
 
+    /**
+     * The collector session endpoint lives on the same host as the configured events endpoint.
+     *
+     * @param int $storeId
+     * @return string
+     */
+    public function getSessionUrl(int $storeId): string
+    {
+        $parts = parse_url($this->getEndpoint($storeId));
+        if (!is_array($parts) || ($parts['scheme'] ?? '') !== 'https' || ($parts['host'] ?? '') === '') {
+            return '';
+        }
+
+        return 'https://' . $parts['host']
+            . (isset($parts['port']) ? ':' . $parts['port'] : '')
+            . '/v1/session';
+    }
+
     public function getApiToken(int $storeId): string
     {
         $stored = (string) $this->scopeConfig->getValue(
