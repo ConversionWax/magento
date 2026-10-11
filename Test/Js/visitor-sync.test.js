@@ -6,15 +6,21 @@ let factory;
 global.define = (deps, fn) => { factory = fn; };
 require('../../view/frontend/web/js/visitor-sync.js');
 
-function setup(initial, cookieAllowed, session = new Map(), lastRead) {
+function setup(initial, cookieAllowed, session = new Map(), lastRead, gpc = { value: false }) {
     const events = [];
     const reloads = [];
     const handlers = {};
     let subscriber = null;
     let data = initial;
     const win = new EventTarget();
-    // Mirrors the template shim: the cached section decides, anything else is denied.
-    win.cw = { consentState: function () { return data && data.state === 'granted' ? 'granted' : 'denied'; }, __mgShim: true };
+    // Mirrors the template shim: GPC denies first, then the cached section decides, anything else is denied.
+    win.cw = {
+        consentState: function () {
+            if (win.navigator.globalPrivacyControl === true) { return 'denied'; }
+            return data && data.state === 'granted' ? 'granted' : 'denied';
+        },
+        __mgShim: true
+    };
     win.addEventListener('cw:consent', (e) => events.push(e.detail.state));
     if (lastRead !== undefined) { win.cw.__mgLast = lastRead; }
     win.sessionStorage = {
@@ -22,6 +28,7 @@ function setup(initial, cookieAllowed, session = new Map(), lastRead) {
         setItem: (k, v) => { session.set(k, v); }
     };
     win.navigator = {};
+    Object.defineProperty(win.navigator, 'globalPrivacyControl', { get: () => gpc.value });
     global.window = win;
     global.document = {};
     global.CustomEvent = CustomEvent;
@@ -50,6 +57,11 @@ test('needsReload compares expected consent with the stored state', () => {
     assert.strictEqual(init.needsReload({ state: 'denied' }, false, false), true);
     assert.strictEqual(init.needsReload({ state: 'granted' }, false, false), false);
     assert.strictEqual(init.needsReload({ state: 'error' }, false, false), false);
+    // GPC on: only denied is current, whatever the cookie choice.
+    assert.strictEqual(init.needsReload({ state: 'granted' }, false, false, true), true);
+    assert.strictEqual(init.needsReload({ state: 'granted' }, true, true, true), true);
+    assert.strictEqual(init.needsReload({ state: 'denied' }, true, true, true), false);
+    assert.strictEqual(init.needsReload({ state: 'error' }, true, true, true), false);
 });
 
 test('init publishes the stored state and fires cw:consent only on change', () => {
@@ -127,4 +139,29 @@ test('an empty section always reloads once per page', () => {
     const ctx = setup({}, { value: true }, session);
     ctx.init({ restriction: true });
     assert.strictEqual(ctx.reloads.length, 1);
+});
+
+test('GPC turned on after a cached grant triggers one corrective reload and publishes denied', () => {
+    const session = new Map();
+    const cookie = { value: true };
+    const gpc = { value: false };
+    // An earlier page recorded the inputs for a grant with GPC off.
+    const before = setup({ state: 'granted' }, cookie, session, undefined, gpc);
+    before.init({ restriction: true });
+    assert.strictEqual(before.reloads.length, 0);
+    session.set('cwax-visitor-inputs', '10');
+
+    gpc.value = true;
+    const ctx = setup({ state: 'granted' }, cookie, session, 'granted', gpc);
+    ctx.init({ restriction: true });
+    assert.strictEqual(ctx.reloads.length, 1, 'stale grant is reloaded');
+    assert.strictEqual(session.get('cwax-visitor-inputs'), '11');
+    assert.deepStrictEqual(ctx.events, ['denied']);
+    ctx.push({ state: 'denied' });
+    assert.deepStrictEqual(ctx.events, ['denied']);
+    assert.strictEqual(ctx.reloads.length, 1, 'no reload loop');
+
+    const next = setup({ state: 'denied' }, cookie, session, undefined, gpc);
+    next.init({ restriction: true });
+    assert.strictEqual(next.reloads.length, 0, 'unchanged inputs on the next page: no reload');
 });

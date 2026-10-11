@@ -99,3 +99,17 @@ test('the shim adds no global except cw and ignores host globals named compute',
         assert.strictEqual(value, 'granted');
     }
 });
+
+test('Global Privacy Control answers denied before trusting a cached grant', () => {
+    const granted = JSON.stringify({ 'cwax-visitor': { state: 'granted' } });
+    for (const restriction of [true, false]) {
+        const cw = run({ restriction, cookie: SESS + ALLOW, storage: granted, gpc: true });
+        assert.strictEqual(cw.consentState(), 'denied', String(restriction));
+        assert.strictEqual(cw.__mgLast, 'denied');
+    }
+    // Only a strict true counts, as in the browser API.
+    for (const gpc of [false, undefined, 'true', 1]) {
+        const cw = run({ restriction: true, cookie: SESS + ALLOW, storage: granted, gpc });
+        assert.strictEqual(cw.consentState(), 'granted', String(gpc));
+    }
+});

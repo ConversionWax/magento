@@ -2,7 +2,8 @@
  * Keeps window.cw.consentState() and the cwax-visitor section in step with the Magento cookie notice.
  * The section PHP does the real work (cookies, collector). This file only:
  *  - fires cw:consent when the synchronous window.cw.consentState() changes (the shim is in the template),
- *  - forces one section reload when the stored section disagrees with the visitor's cookie choice.
+ *  - forces one section reload when the stored section disagrees with the visitor's cookie choice or
+ *    Global Privacy Control.
  * It sends no events of its own.
  */
 define([
@@ -17,9 +18,10 @@ define([
     var ALLOW_EVENT = 'user:allowed:save:cookie';
     var MARKER = 'cwax-visitor-inputs';
 
-    function needsReload(data, restriction, cookieAllowed) {
+    // gpc: navigator.globalPrivacyControl is on. The server then denies (Sec-GPC), so a stored grant is stale.
+    function needsReload(data, restriction, cookieAllowed, gpc) {
         var state = data && data.state;
-        var expected = restriction ? cookieAllowed : true;
+        var expected = !gpc && (restriction ? cookieAllowed : true);
 
         if (!state) {
             return true;
@@ -97,7 +99,7 @@ define([
 
         function apply(data) {
             publish();
-            if (!reloaded && needsReload(data, restriction, cookieAllowed())
+            if (!reloaded && needsReload(data, restriction, cookieAllowed(), gpc())
                 && (!(data && data.state) || inputsChanged())) {
                 reload();
             }
