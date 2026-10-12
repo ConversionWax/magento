@@ -1,0 +1,56 @@
+<?php
+/**
+ * Static for every visitor of a store view. Defines the consent API early (contract C3) and starts
+ * the sync component. The only server value is the store-level cookie restriction flag.
+ *
+ * @var \Magento\Framework\View\Element\Template $block
+ * @var \Magento\Framework\View\Helper\SecureHtmlRenderer $secureRenderer
+ */
+declare(strict_types=1);
+
+/** @var \Cwax\Banner\ViewModel\VisitorSync $viewModel */
+$viewModel = $block->getData('view_model');
+if (!$viewModel->isEnabled()) {
+    return;
+}
+// Synchronous window.cw.consentState(): only ever 'granted' or 'denied'.
+// 0. Global Privacy Control on (navigator.globalPrivacyControl === true): 'denied', before any cache.
+//    The server denies on Sec-GPC too, so a section cached before GPC was turned on is never trusted.
+// 1. A cached cwax-visitor section is the server's answer, trusted only while Magento itself would
+//    keep it: the mage-cache-sessid cookie exists AND (restriction off OR the allow cookie exists).
+//    Otherwise customer-data is about to clear the storage, so the answer is 'denied'.
+//    Within that, 'granted' only when the section says so.
+// 2. No usable cached section: the grant side of the composite resolver (collector consent mode,
+//    snippet cookie, admin fallback policy) is server-only, so the answer is 'denied'.
+// The last returned value is kept in window.cw.__mgLast so the sync component can publish a change.
+$shimSource = <<<'JS'
+(function(w,d){
+w.cw=w.cw||{};
+if(typeof w.cw.consentState==='function'){return;}
+w.cw.__mgShim=true;
+var compute=function(){
+try{
+if(w.navigator&&w.navigator.globalPrivacyControl===true){return 'denied';}
+var c=d.cookie;
+var usable=/(?:^|; )mage-cache-sessid=/.test(c)&&(!__RESTRICTION__||/(?:^|; )user_allowed_save_cookie=[^;]/.test(c));
+if(usable){
+var raw=w.localStorage.getItem('mage-cache-storage');
+var section=raw?JSON.parse(raw)['cwax-visitor']:null;
+if(section&&section.state==='granted'){return 'granted';}
+}
+}catch(e){}
+return 'denied';
+};
+w.cw.consentState=function(){
+var v=compute();
+w.cw.__mgLast=v;
+return v;
+};
+})(window,document);
+JS;
+$shim = str_replace('__RESTRICTION__', $viewModel->respectsRestriction() ? 'true' : 'false', $shimSource);
+?>
+<?= /* @noEscape */ $secureRenderer->renderTag('script', [], $shim, false) ?>
+<script type="text/x-magento-init">
+{"*": {"Cwax_Banner/js/visitor-sync": <?= /* @noEscape */ $viewModel->getConfigJson() ?>}}
+</script>

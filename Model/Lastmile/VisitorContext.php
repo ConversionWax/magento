@@ -21,6 +21,7 @@ class VisitorContext
     private const COOKIE_DURATION = 34560000;
     private const SESSION_IDLE_MS = 1800000;
     private const NUMBER_CAP = 1000000;
+    private const PENDING_PURCHASE_MAX_AGE_MS = 2592000000; // 30 days
 
     // Query params kept on entryUrl: standard UTM parameters plus the click
     // ids the collector's own attribution classifier recognizes (lastmile
@@ -35,6 +36,8 @@ class VisitorContext
     private ?array $context = null;
     private bool $unresolved = false;
     private ?bool $cacheable = null;
+    /** @var string|null what the last persist() wrote, so a repeat flush() sends no duplicate Set-Cookie */
+    private ?string $persisted = null;
 
     public function __construct(
         private readonly CookieManagerInterface $cookieManager,
@@ -63,6 +66,7 @@ class VisitorContext
      *   isNew:bool,
      *   number:int,
      *   hadPurchase:bool,
+     *   pendingPurchase:?array{orderId:string,value:float,currency:string,ts:int},
      *   geo:?string
      * }|null
      */
@@ -137,6 +141,7 @@ class VisitorContext
                 'number' => $claims['number']
                     ?? min($previous === null ? 1 : $previous['number'] + 1, self::NUMBER_CAP),
                 'hadPurchase' => $claims['hadPurchase'] ?? ($previous['hadPurchase'] ?? false),
+                'pendingPurchase' => $previous['pendingPurchase'] ?? null,
             ];
         } else {
             // Only reachable once $previous has already been established
@@ -150,6 +155,7 @@ class VisitorContext
                 'entryReferrer' => $this->cleanReferrer($this->request->getServer('HTTP_REFERER')),
                 'number' => $claims['number'] ?? 1,
                 'hadPurchase' => $claims['hadPurchase'] ?? false,
+                'pendingPurchase' => null,
             ];
             $state['sessionId'] = $sessionId;
             $state['lastActivityAt'] = $now;
@@ -176,20 +182,91 @@ class VisitorContext
         return $this->context;
     }
 
-    public function markPurchased(): void
+    /**
+     * Callers must have storage consent before calling this (or clearPendingPurchase()),
+     * exactly as for get(); VisitorContext itself holds no consent opinion.
+     *
+     * @param array{orderId?:string,value?:float|int,currency?:string} $purchase
+     */
+    public function markPurchased(array $purchase = []): void
     {
-        $context = $this->get();
-        if ($context === null || $context['hadPurchase'] === true) {
+        if ($this->get() === null) {
             return;
         }
         $this->context['hadPurchase'] = true;
+        $pending = $this->normalizePurchase($purchase);
+        if ($pending !== null) {
+            $this->context['pendingPurchase'] = $pending;
+        }
+        // Persisting is deferred to flush(); see the note in get().
+    }
+
+    public function clearPendingPurchase(): void
+    {
+        if ($this->get() === null) {
+            return;
+        }
+        $this->context['pendingPurchase'] = null;
         // Persisting is deferred to flush(); see the note in get().
     }
 
     /**
+     * @param array<string, mixed> $purchase
+     * @return array{orderId:string,value:float,currency:string,ts:int}|null
+     */
+    private function normalizePurchase(array $purchase): ?array
+    {
+        $orderId = $purchase['orderId'] ?? null;
+        $value = $purchase['value'] ?? null;
+        $currency = $purchase['currency'] ?? null;
+        if (!is_string($orderId) || $orderId === '' || strlen($orderId) > 64
+            || !(is_int($value) || is_float($value)) || !is_finite((float) $value)
+            || !is_string($currency) || preg_match('/^[A-Za-z]{3}$/', $currency) !== 1
+        ) {
+            return null;
+        }
+
+        return [
+            'orderId' => $orderId,
+            'value' => (float) $value,
+            'currency' => strtoupper($currency),
+            'ts' => (int) round(microtime(true) * 1000),
+        ];
+    }
+
+    /**
+     * @return array{orderId:string,value:float,currency:string,ts:int}|null
+     */
+    private function decodePurchase(mixed $raw): ?array
+    {
+        if (!is_array($raw)
+            || !is_string($raw['o'] ?? null) || $raw['o'] === '' || strlen($raw['o']) > 64
+            || !(is_int($raw['v'] ?? null) || is_float($raw['v'] ?? null))
+            || !is_finite((float) $raw['v'])
+            || !is_string($raw['c'] ?? null) || preg_match('/^[A-Za-z]{3}$/', $raw['c']) !== 1
+            || !is_int($raw['t'] ?? null)
+        ) {
+            return null;
+        }
+        $ageMs = (int) round(microtime(true) * 1000) - $raw['t'];
+        if ($ageMs > self::PENDING_PURCHASE_MAX_AGE_MS || $ageMs < -60000) {
+            return null;
+        }
+
+        return [
+            'orderId' => $raw['o'],
+            'value' => (float) $raw['v'],
+            'currency' => strtoupper($raw['c']),
+            'ts' => $raw['t'],
+        ];
+    }
+
+    /**
      * Writes the identity cookies, if any identity was resolved this request
-     * and the response has turned out to be genuinely uncacheable. Must be
-     * called once, late, at controller_front_send_response_before, after
+     * and the response has turned out to be genuinely uncacheable. Called
+     * late, at controller_front_send_response_before (and by the cwax-visitor
+     * section, which has declared its response uncacheable); a repeat call
+     * with unchanged state writes nothing. The late call runs after
      * Magento's page cache plugin has finalized the Cache-Control header -
      * calling isCacheableResponse() directly here rather than through the
      * memoized resolveCacheable() so a stale reading from an earlier,
@@ -287,6 +364,11 @@ class VisitorContext
         }
 
         try {
+            $encoded = $this->encodeState($this->context);
+            $signature = $this->context['visitorId'] . '|' . $encoded;
+            if ($signature === $this->persisted) {
+                return;
+            }
             $visitorMetadata = $this->cookieMetadataFactory->createPublicCookieMetadata()
                 ->setDuration(self::COOKIE_DURATION)
                 ->setPath('/')
@@ -309,9 +391,10 @@ class VisitorContext
                 ->setSameSite('Lax');
             $this->cookieManager->setPublicCookie(
                 self::SESSION_COOKIE,
-                $this->encodeState($this->context),
+                $encoded,
                 $sessionMetadata
             );
+            $this->persisted = $signature;
         } catch (\Throwable $exception) {
             $this->logger->warning('ConversionWax Last Mile could not persist visitor context.', [
                 'exception' => $exception,
@@ -322,7 +405,7 @@ class VisitorContext
     /** @param array<string, mixed> $state */
     private function encodeState(array $state): string
     {
-        $json = json_encode([
+        $payload = [
             'vid' => $state['visitorId'],
             'sid' => $state['sessionId'],
             'st' => $state['startedAt'],
@@ -331,7 +414,17 @@ class VisitorContext
             'ref' => $state['entryReferrer'],
             'n' => $state['number'],
             'hp' => $state['hadPurchase'] ? 1 : 0,
-        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        ];
+        if (($state['pendingPurchase'] ?? null) !== null) {
+            // Only what the collector needs: no email, no customer id.
+            $payload['pp'] = [
+                'o' => $state['pendingPurchase']['orderId'],
+                'v' => $state['pendingPurchase']['value'],
+                'c' => $state['pendingPurchase']['currency'],
+                't' => $state['pendingPurchase']['ts'],
+            ];
+        }
+        $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 
         return rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
     }
@@ -345,7 +438,8 @@ class VisitorContext
      *   entryUrl:string,
      *   entryReferrer:?string,
      *   number:int,
-     *   hadPurchase:bool
+     *   hadPurchase:bool,
+     *   pendingPurchase:?array{orderId:string,value:float,currency:string,ts:int}
      * }|null
      */
     private function decodeState(string $encoded, string $visitorId): ?array
@@ -401,6 +495,7 @@ class VisitorContext
                 'entryReferrer' => $ref,
                 'number' => min($state['n'], self::NUMBER_CAP),
                 'hadPurchase' => ($state['hp'] ?? 0) === 1,
+                'pendingPurchase' => $this->decodePurchase($state['pp'] ?? null),
             ];
         } catch (\Throwable) {
             return null;

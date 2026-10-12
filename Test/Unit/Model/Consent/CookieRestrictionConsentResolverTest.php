@@ -7,6 +7,7 @@ namespace Cwax\Banner\Test\Unit\Model\Consent;
 use Cwax\Banner\Api\Data\ConsentDecisionInterface;
 use Cwax\Banner\Model\Consent\CookieRestrictionConsentResolver;
 use Magento\Cookie\Helper\Cookie as CookieHelper;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -91,9 +92,8 @@ class CookieRestrictionConsentResolverTest extends TestCase
     /**
      * This resolver must never affirmatively grant in the normal flow: no
      * combination of inputs should ever produce isStorageGranted() === true.
-     *
-     * @dataProvider allInputCombinationsProvider
      */
+    #[DataProvider('allInputCombinationsProvider')]
     public function testNeverAffirmativelyGrants(bool $restrictionModeEnabled, bool $userNotAllowed): void
     {
         $resolver = $this->makeResolver($restrictionModeEnabled, $userNotAllowed);

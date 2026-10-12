@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Customer:etc/sections.xsd">
+    <!-- Order placement sets the pending purchase. The carts key is identical to the core
+         Magento_Checkout key on purpose: the section config returns only the first matching key,
+         so identical keys merge and a logged-in order still invalidates cwax-visitor. -->
+    <action name="rest/*/V1/guest-carts/*/payment-information">
+        <section name="cwax-visitor"/>
+    </action>
+    <action name="rest/*/V1/carts/*/payment-information">
+        <section name="cwax-visitor"/>
+    </action>
+</config>

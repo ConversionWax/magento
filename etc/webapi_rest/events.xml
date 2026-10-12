@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
+    <!-- Luma checkout places the order through REST (payment-information). PurchaseObserver (etc/events.xml)
+         marks the pending purchase there; without this flush the marker never reaches _cwms. -->
+    <event name="controller_front_send_response_before">
+        <observer name="conversionwax_lastmile_identity_flush"
+                  instance="Cwax\Banner\Observer\Lastmile\IdentityFlushObserver"/>
+    </event>
+</config>
