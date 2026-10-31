@@ -23,7 +23,7 @@ function run({ restriction, storage, cookie = '', gpc, cw }) {
             return key === 'mage-cache-storage' ? (storage === undefined ? null : storage) : null;
         }
     };
-    vm.runInNewContext(source.replace('__RESTRICTION__', String(restriction)), win);
+    vm.runInNewContext(source.replaceAll('__RESTRICTION__', String(restriction)), win);
     return win.cw;
 }
 
@@ -34,7 +34,7 @@ function runContext(opts) {
     win.document = { cookie: opts.cookie };
     win.localStorage = { getItem: () => opts.storage };
     const before = new Set(Object.keys(win));
-    vm.runInNewContext(source.replace('__RESTRICTION__', 'true'), win);
+    vm.runInNewContext(source.replaceAll('__RESTRICTION__', 'true'), win);
     return { win, before };
 }
 
@@ -112,4 +112,38 @@ test('Global Privacy Control answers denied before trusting a cached grant', () 
         const cw = run({ restriction: true, cookie: SESS + ALLOW, storage: granted, gpc });
         assert.strictEqual(cw.consentState(), 'granted', String(gpc));
     }
+});
+
+function arrival({ referrer, gpc, cookie = '', restriction = false }) {
+    const written = [];
+    const doc = { referrer };
+    Object.defineProperty(doc, 'cookie', { get: () => cookie, set: (value) => written.push(value) });
+    const win = { navigator: { globalPrivacyControl: gpc }, location: { origin: 'https://shop.test' }, document: doc };
+    win.window = win;
+    win.localStorage = { getItem: () => null };
+    vm.runInNewContext(source.replaceAll('__RESTRICTION__', String(restriction)), win);
+    return written;
+}
+
+test('an external arrival records the referrer without its query', () => {
+    const written = arrival({ referrer: 'https://www.google.com/search?q=private#x' });
+    assert.strictEqual(written.length, 1);
+    assert.match(written[0], /^_cwer=https%3A%2F%2Fwww\.google\.com%2Fsearch; Max-Age=60; Path=\/; Secure; SameSite=Lax$/);
+});
+
+test('an internal navigation records nothing', () => {
+    assert.deepStrictEqual(arrival({ referrer: 'https://shop.test/sale' }), []);
+});
+
+test('no referrer records nothing', () => {
+    assert.deepStrictEqual(arrival({ referrer: '' }), []);
+});
+
+test('Global Privacy Control records nothing', () => {
+    assert.deepStrictEqual(arrival({ referrer: 'https://www.google.com/', gpc: true }), []);
+});
+
+test('cookie restriction records nothing until the visitor allows cookies', () => {
+    assert.deepStrictEqual(arrival({ referrer: 'https://www.google.com/', restriction: true }), []);
+    assert.strictEqual(arrival({ referrer: 'https://www.google.com/', restriction: true, cookie: ALLOW }).length, 1);
 });

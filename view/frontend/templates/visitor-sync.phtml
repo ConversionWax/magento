@@ -23,11 +23,20 @@ if (!$viewModel->isEnabled()) {
 // 2. No usable cached section: the grant side of the composite resolver (collector consent mode,
 //    snippet cookie, admin fallback policy) is server-only, so the answer is 'denied'.
 // The last returned value is kept in window.cw.__mgLast so the sync component can publish a change.
+// An external arrival also writes the 60-second _cwer cookie for the section request. Cached pages never
+// reach PHP, so only the browser knows document.referrer. No query string, and nothing without consent.
 $shimSource = <<<'JS'
 (function(w,d){
 w.cw=w.cw||{};
 if(typeof w.cw.consentState==='function'){return;}
 w.cw.__mgShim=true;
+try{
+var r=d.referrer;
+if(r&&r.indexOf(w.location.origin+'/')!==0&&w.navigator.globalPrivacyControl!==true
+&&(!__RESTRICTION__||/(?:^|; )user_allowed_save_cookie=[^;]/.test(d.cookie))){
+d.cookie='_cwer='+encodeURIComponent(r.split('#')[0].split('?')[0])+'; Max-Age=60; Path=/; Secure; SameSite=Lax';
+}
+}catch(e){}
 var compute=function(){
 try{
 if(w.navigator&&w.navigator.globalPrivacyControl===true){return 'denied';}

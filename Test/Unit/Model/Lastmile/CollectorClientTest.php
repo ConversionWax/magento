@@ -69,7 +69,7 @@ class CollectorClientTest extends TestCase
             json_decode((string) $this->postedBody, true)
         );
         $this->assertSame(200, $this->options[CURLOPT_CONNECTTIMEOUT_MS]);
-        $this->assertSame(300, $this->options[CURLOPT_TIMEOUT_MS]);
+        $this->assertSame(1500, $this->options[CURLOPT_TIMEOUT_MS]);
         $this->assertSame(1, $this->options[CURLOPT_NOSIGNAL]);
         $this->assertSame('203.0.113.9', $this->headers['X-Forwarded-For']);
         $this->assertSame('application/json', $this->headers['Content-Type']);

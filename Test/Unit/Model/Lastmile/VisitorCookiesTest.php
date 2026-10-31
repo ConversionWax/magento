@@ -154,11 +154,11 @@ class VisitorCookiesTest extends TestCase
 
     public function testClearAllDeletesOnlyCookiesThatExist(): void
     {
-        $this->jar = ['_cwid' => 'x', '_cwvs' => 'a.b'];
+        $this->jar = ['_cwid' => 'x', '_cwvs' => 'a.b', '_cwer' => 'https%3A%2F%2Fnews.test%2F'];
 
         $this->cookies()->clearAll();
 
-        $this->assertEqualsCanonicalizing(['_cwid', '_cwvs'], $this->deleted);
+        $this->assertEqualsCanonicalizing(['_cwid', '_cwvs', '_cwer'], $this->deleted);
     }
 
     public function testWriteSummaryIsSkippedAndStaleCookieClearedWithoutStorageConsent(): void

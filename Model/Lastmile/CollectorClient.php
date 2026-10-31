@@ -10,12 +10,12 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Synchronous mint call to the collector session endpoint. This runs inside the cwax-visitor section
- * request (an AJAX call, never a page render), so it has a hard 300 ms budget and fails closed.
+ * request (an AJAX call, never a page render), so it has a hard 1.5 s budget and fails closed.
  */
 class CollectorClient
 {
     private const CONNECT_TIMEOUT_MS = 200;
-    private const TOTAL_TIMEOUT_MS = 300;
+    private const TOTAL_TIMEOUT_MS = 1500;
     // Caps at the collector's accepted length (1024); it ignores a longer device.ua.
     private const MAX_USER_AGENT_LENGTH = 1024;
 

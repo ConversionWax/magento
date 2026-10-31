@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cwax\Banner\Model\Queue;
 
 use Cwax\Banner\Model\Config;
+use Cwax\Banner\Model\Lastmile\StoreUrl;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Psr\Log\LoggerInterface;
@@ -23,7 +24,8 @@ class EventConsumer
         private readonly Config $config,
         private readonly MessagePublisher $publisher,
         private readonly CurlFactory $curlFactory,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        private readonly StoreUrl $storeUrl
     ) {
     }
 
@@ -48,8 +50,13 @@ class EventConsumer
         }
 
         try {
+            $payload = $message['payload'];
+            if (is_string($payload['session']['entryUrl'] ?? null)) {
+                // Done here rather than at enqueue so messages already queued are corrected too.
+                $payload['session']['entryUrl'] = $this->storeUrl->absolute($storeId, $payload['session']['entryUrl']);
+            }
             $body = json_encode(
-                $message['payload'],
+                $payload,
                 JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
             );
             // A fresh client per message: Curl is otherwise a shared

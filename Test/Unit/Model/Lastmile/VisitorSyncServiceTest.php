@@ -9,6 +9,8 @@ use Cwax\Banner\Api\Data\ConsentDecisionInterface;
 use Cwax\Banner\Model\Config;
 use Cwax\Banner\Model\Consent\ConsentDecision;
 use Cwax\Banner\Model\Lastmile\CollectorClient;
+use Cwax\Banner\Model\Lastmile\EventQueue;
+use Cwax\Banner\Model\Lastmile\StoreUrl;
 use Cwax\Banner\Model\Lastmile\VisitorContext;
 use Cwax\Banner\Model\Lastmile\VisitorCookies;
 use Cwax\Banner\Model\Lastmile\VisitorSyncService;
@@ -28,6 +30,7 @@ class VisitorSyncServiceTest extends TestCase
     private VisitorContext&Stub $context;
     private VisitorCookies&Stub $cookies;
     private CollectorClient&Stub $client;
+    private EventQueue&Stub $events;
     /** @var array<int, array<string, mixed>> */
     private array $calls = [];
 
@@ -53,8 +56,8 @@ class VisitorSyncServiceTest extends TestCase
             'sessionId' => self::SID,
             'startedAt' => 1700000000000,
             'lastActivityAt' => 1700000090000,
-            'entryUrl' => '/customer/section/load/',
-            'entryReferrer' => 'https://shop.test/landing',
+            'entryUrl' => '/sale?utm_source=google',
+            'entryReferrer' => 'https://news.test/story',
             'isNew' => false,
             'number' => 1,
             'hadPurchase' => false,
@@ -65,6 +68,11 @@ class VisitorSyncServiceTest extends TestCase
         $this->cookies->method('getSummary')->willReturn($summary);
         $this->cookies->method('getSessionId')->willReturn($cookieSid);
         $this->client = $make('client', CollectorClient::class);
+        $this->events = $make('events', EventQueue::class);
+        $storeUrl = $this->createStub(StoreUrl::class);
+        $storeUrl->method('absolute')->willReturnCallback(
+            static fn (int $storeId, string $url): string => 'https://shop.test' . $url
+        );
         $config = $this->createStub(Config::class);
         $config->method('getWebPropertyId')->willReturn(self::PROPERTY);
         $remote = $this->createStub(RemoteAddress::class);
@@ -86,7 +94,9 @@ class VisitorSyncServiceTest extends TestCase
             $this->client,
             $remote,
             $request,
-            $consent
+            $consent,
+            $this->events,
+            $storeUrl
         );
     }
 
@@ -148,10 +158,7 @@ class VisitorSyncServiceTest extends TestCase
 
     public function testNewSessionSendsAFreshMintAndWritesBothCookies(): void
     {
-        $service = $this->service(
-            server: ['HTTP_REFERER' => 'https://shop.test/?utm_source=google&utm_medium=cpc&token=secret'],
-            mocks: ['cookies']
-        );
+        $service = $this->service(mocks: ['cookies']);
         $this->respond([[
             'summary' => 'new.sig',
             'sessionId' => 'ignored',
@@ -181,7 +188,12 @@ class VisitorSyncServiceTest extends TestCase
         $this->assertSame(1700000000000, $body['session']['lastActivityAt']);
         $this->assertSame(self::SID, $body['session']['sessionId']);
         $this->assertSame(
-            ['url' => '/?utm_source=google&utm_medium=cpc', 'referrer' => null, 'ts' => 1700000000000, 'isLanding' => true],
+            [
+                'url' => 'https://shop.test/sale?utm_source=google',
+                'referrer' => 'https://news.test/story',
+                'ts' => 1700000000000,
+                'isLanding' => true,
+            ],
             $body['arrival']
         );
         $this->assertSame(['ua' => 'Mozilla/5.0 Test'], $body['device']);
@@ -192,18 +204,31 @@ class VisitorSyncServiceTest extends TestCase
         $this->assertTrue($result['synced']);
     }
 
-    public function testArrivalFallsBackToTheContextUrlForAForeignOrMissingReferer(): void
+    public function testANewSessionQueuesThePageViewOfItsLandingPage(): void
     {
-        $service = $this->service(
-            server: ['HTTP_REFERER' => 'https://evil.test/?utm_source=x'],
-            mocks: ['cookies']
-        );
+        $service = $this->service(['isNew' => true], mocks: ['events']);
         $this->respond([['summary' => 'new.sig']]);
-        $this->cookies->expects($this->once())->method('writeSession');
+        $this->events->expects($this->once())->method('enqueue')->with('page_view', ['path' => '/sale']);
 
         $service->sync(1);
+    }
 
-        $this->assertSame('/customer/section/load/', $this->calls[0]['body']['arrival']['url']);
+    public function testAContinuingSessionQueuesNoPageView(): void
+    {
+        $service = $this->service(mocks: ['events']);
+        $this->respond([['summary' => 'new.sig']]);
+        $this->events->expects($this->never())->method('enqueue');
+
+        $service->sync(1);
+    }
+
+    public function testANewSessionStillQueuesItsPageViewWhenTheCollectorCallFails(): void
+    {
+        $service = $this->service(['isNew' => true], mocks: ['events']);
+        $this->respond([null]);
+        $this->events->expects($this->once())->method('enqueue');
+
+        $service->sync(1);
     }
 
     public function testDeviceIsOmittedEntirelyWhenTheUserAgentIsEmpty(): void
@@ -220,19 +245,6 @@ class VisitorSyncServiceTest extends TestCase
         $this->assertCount(2, $this->calls);
         $this->assertArrayNotHasKey('device', $this->calls[0]['body']);
         $this->assertArrayNotHasKey('device', $this->calls[1]['body']);
-    }
-
-    public function testAPortInTheHostHeaderDoesNotBreakTheSameHostRefererCheck(): void
-    {
-        $service = $this->service(
-            server: ['HTTP_HOST' => 'shop.test:8443', 'HTTP_REFERER' => 'https://shop.test/sale?utm_source=x&token=1'],
-            mocks: ['cookies']
-        );
-        $this->respond([['summary' => 'new.sig']]);
-
-        $service->sync(1);
-
-        $this->assertSame('/sale?utm_source=x', $this->calls[0]['body']['arrival']['url']);
     }
 
     public function testAReturningVisitorEchoesTheExistingSummaryOnANewSession(): void

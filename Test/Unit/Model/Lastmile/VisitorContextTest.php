@@ -18,6 +18,7 @@ use Psr\Log\LoggerInterface;
 class VisitorContextTest extends TestCase
 {
     private const VISITOR_ID = '11111111-2222-4333-8444-555555555555';
+    private const SECTION_URL = 'https://shop.test/customer/section/load/?sections=cwax-visitor';
 
     /** @var array<string, string> */
     private array $jar = [self::VISITOR_COOKIE_NAME => self::VISITOR_ID];
@@ -31,8 +32,13 @@ class VisitorContextTest extends TestCase
      * A fresh VisitorContext per call simulates a fresh request reading the shared cookie jar.
      *
      * @param string|null $cacheControl the response's Cache-Control, or null for no header yet
+     * @param array<string, string> $server
      */
-    private function context(?string $cacheControl = 'no-store'): VisitorContext
+    private function context(
+        ?string $cacheControl = 'no-store',
+        string $uri = 'https://shop.test/',
+        array $server = []
+    ): VisitorContext
     {
         $manager = $this->createStub(CookieManagerInterface::class);
         $manager->method('getCookie')->willReturnCallback(fn (string $n) => $this->jar[$n] ?? null);
@@ -47,8 +53,10 @@ class VisitorContextTest extends TestCase
             static fn (): PublicCookieMetadata => new PublicCookieMetadata()
         );
         $request = $this->createStub(Http::class);
-        $request->method('getUriString')->willReturn('https://shop.test/');
-        $request->method('getServer')->willReturn(null);
+        $request->method('getUriString')->willReturn($uri);
+        $request->method('getServer')->willReturnCallback(
+            static fn (string $key): ?string => $server[$key] ?? null
+        );
         // Default: a known-uncacheable response, so identity can be minted and flush() writes cookies.
         $headers = new Headers();
         if ($cacheControl !== null) {
@@ -216,5 +224,67 @@ class VisitorContextTest extends TestCase
         $this->assertSame(1, $session['hp']);
         $this->assertSame('000000042', $session['pp']['o']);
         $this->assertSame('USD', $session['pp']['c']);
+    }
+
+    public function testASectionRequestTakesTheLandingPageFromItsReferer(): void
+    {
+        $this->jar = [];
+
+        $context = $this->context(uri: self::SECTION_URL, server: [
+            'HTTP_HOST' => 'shop.test',
+            'HTTP_REFERER' => 'https://shop.test/sale?utm_source=google&gclid=abc&token=secret',
+        ])->get();
+
+        $this->assertSame('/sale?utm_source=google&gclid=abc', $context['entryUrl']);
+        $this->assertNull($context['entryReferrer']);
+    }
+
+    public function testASectionRequestComparesTheRefererHostWithoutThePort(): void
+    {
+        $this->jar = [];
+
+        $context = $this->context(uri: self::SECTION_URL, server: [
+            'HTTP_HOST' => 'shop.test:8443',
+            'HTTP_REFERER' => 'https://shop.test:8443/sale',
+        ])->get();
+
+        $this->assertSame('/sale', $context['entryUrl']);
+    }
+
+    public function testASectionRequestNeverUsesItsOwnUrlAsTheEntry(): void
+    {
+        $this->jar = [];
+
+        $context = $this->context(uri: self::SECTION_URL, server: [
+            'HTTP_HOST' => 'shop.test',
+            'HTTP_REFERER' => 'https://evil.test/?utm_source=x',
+        ])->get();
+
+        $this->assertSame('/', $context['entryUrl']);
+    }
+
+    public function testASectionRequestReadsTheExternalReferrerTheBrowserRecorded(): void
+    {
+        $this->jar = ['_cwer' => rawurlencode('https://www.google.com/search?q=private')];
+
+        $context = $this->context(uri: self::SECTION_URL, server: [
+            'HTTP_HOST' => 'shop.test',
+            'HTTP_REFERER' => 'https://shop.test/sale',
+        ])->get();
+
+        $this->assertSame('https://www.google.com/search', $context['entryReferrer']);
+    }
+
+    public function testAPageRequestStripsTheQueryAndFragmentFromItsReferrer(): void
+    {
+        $this->jar = [];
+
+        $context = $this->context(uri: 'https://shop.test/sale', server: [
+            'HTTP_HOST' => 'shop.test',
+            'HTTP_REFERER' => 'https://news.test/story?email=a@b.test#top',
+        ])->get();
+
+        $this->assertSame('/sale', $context['entryUrl']);
+        $this->assertSame('https://news.test/story', $context['entryReferrer']);
     }
 }

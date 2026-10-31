@@ -69,7 +69,7 @@ never cacheable (`Cache-Control: no-store`).
   cookies. With restriction off, the section runs for every visitor. The section answers `off` and
   does nothing when the integration is not configured.
 - When allowed, the section calls the collector `POST /v1/session` on the same host as the events
-  endpoint, from Magento, with a 300 ms limit. It forwards the visitor IP and user agent (for geo
+  endpoint, from Magento, with a 1.5 s limit. It forwards the visitor IP and user agent (for geo
   and device only) and reuses `_cwid`. The call authenticates with the integration API token as an
   `Authorization: Bearer` header, the same token the event consumer uses (contract C9). The token
   never reaches the browser. On any failure the section writes no cookies and the embed shows
@@ -89,8 +89,11 @@ never cacheable (`Cache-Control: no-store`).
   apply from the next page view.
 - Placing an order (REST checkout, guest or logged in) invalidates the section, so the next page
   carries the buyer claims (`hp`, `lp`).
-- In release 1 the `organic` and `referral` traffic mediums are not classified on Magento. The
-  session cookie carries the source and medium the collector returns and nothing more.
+- Under a full-page cache the section request is the first request PHP sees. The module takes the
+  landing page and its attribution parameters from that request's same-host `Referer`, and reports
+  the session start with a `page_view` for that page. When the visitor arrives from another site,
+  the shim writes a 60-second `_cwer` cookie with the external referrer, without its query string.
+  It writes nothing without consent.
 
 Each section call is one short PHP request. If the collector is slow, visitors see no delay on page
 render, only a later cookie.

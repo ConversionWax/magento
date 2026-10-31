@@ -17,6 +17,7 @@ class VisitorCookies
 {
     public const VISITOR = '_cwid';
     public const MAGENTO_SESSION = '_cwms';
+    public const ENTRY_REFERRER = '_cwer';
     public const SESSION = '_cws';
     public const SUMMARY = '_cwvs';
 
@@ -92,7 +93,7 @@ class VisitorCookies
      */
     public function clearAll(): void
     {
-        foreach ([self::VISITOR, self::MAGENTO_SESSION, self::SESSION, self::SUMMARY] as $name) {
+        foreach ([self::VISITOR, self::MAGENTO_SESSION, self::SESSION, self::SUMMARY, self::ENTRY_REFERRER] as $name) {
             $this->clear($name);
         }
     }

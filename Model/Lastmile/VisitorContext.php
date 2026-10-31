@@ -18,6 +18,10 @@ class VisitorContext
     // only, never written here.
     private const BROWSER_SESSION_COOKIE = '_cws';
     private const SUMMARY_COOKIE = '_cwvs';
+    // Short-lived cookie the consent shim writes on an external arrival. Cached pages never reach PHP,
+    // so only the browser knows document.referrer. Read only, never written here.
+    private const ENTRY_REFERRER_COOKIE = '_cwer';
+    private const SECTION_LOAD_PATH = '/customer/section/load';
     private const COOKIE_DURATION = 34560000;
     private const SESSION_IDLE_MS = 1800000;
     private const NUMBER_CAP = 1000000;
@@ -131,13 +135,14 @@ class VisitorContext
         }
 
         if ($isNew) {
+            $entry = $this->resolveEntry();
             $state = [
                 'visitorId' => $visitorId,
                 'sessionId' => $sessionId,
                 'startedAt' => $now,
                 'lastActivityAt' => $now,
-                'entryUrl' => $this->sanitizeEntryUrl($this->request->getUriString()),
-                'entryReferrer' => $this->cleanReferrer($this->request->getServer('HTTP_REFERER')),
+                'entryUrl' => $entry['url'],
+                'entryReferrer' => $entry['referrer'],
                 'number' => $claims['number']
                     ?? min($previous === null ? 1 : $previous['number'] + 1, self::NUMBER_CAP),
                 'hadPurchase' => $claims['hadPurchase'] ?? ($previous['hadPurchase'] ?? false),
@@ -146,13 +151,14 @@ class VisitorContext
         } else {
             // Only reachable once $previous has already been established
             // above; the null-coalesced literal is a defensive fallback.
+            $entry = $this->resolveEntry();
             $state = $previous ?? [
                 'visitorId' => $visitorId,
                 'sessionId' => $sessionId,
                 'startedAt' => $now,
                 'lastActivityAt' => $now,
-                'entryUrl' => $this->sanitizeEntryUrl($this->request->getUriString()),
-                'entryReferrer' => $this->cleanReferrer($this->request->getServer('HTTP_REFERER')),
+                'entryUrl' => $entry['url'],
+                'entryReferrer' => $entry['referrer'],
                 'number' => $claims['number'] ?? 1,
                 'hadPurchase' => $claims['hadPurchase'] ?? false,
                 'pendingPurchase' => null,
@@ -481,10 +487,7 @@ class VisitorContext
             }
             $url = $this->sanitizeEntryUrl($rawUrl);
 
-            $ref = is_string($state['ref'] ?? null) ? substr($state['ref'], 0, 2048) : null;
-            if ($ref !== null && !$this->isAbsoluteHttpUrl($ref)) {
-                $ref = null;
-            }
+            $ref = $this->cleanReferrer($state['ref'] ?? null);
 
             return [
                 'visitorId' => $visitorId,
@@ -572,13 +575,46 @@ class VisitorContext
         return ['number' => $number, 'hadPurchase' => $hadPurchase];
     }
 
+    /**
+     * Under a full-page cache the cwax-visitor section is the first request PHP sees, so its own URL is
+     * never the entry: the page the visitor landed on is its same-host Referer, and an external referrer
+     * is only known to the browser.
+     *
+     * @return array{url:string,referrer:?string}
+     */
+    private function resolveEntry(): array
+    {
+        $uri = $this->request->getUriString();
+        $referer = $this->request->getServer('HTTP_REFERER');
+        if (!str_contains((string) parse_url($uri, PHP_URL_PATH), self::SECTION_LOAD_PATH)) {
+            return ['url' => $this->sanitizeEntryUrl($uri), 'referrer' => $this->cleanReferrer($referer)];
+        }
+
+        $landing = is_string($referer) ? substr($referer, 0, 2048) : '';
+        $browserReferrer = $this->cookieManager->getCookie(self::ENTRY_REFERRER_COOKIE);
+
+        return [
+            'url' => $this->isAbsoluteHttpUrl($landing) && $this->isStoreUrl($landing)
+                ? $this->sanitizeEntryUrl($landing)
+                : '/',
+            'referrer' => $this->cleanReferrer(
+                is_string($browserReferrer) ? rawurldecode($browserReferrer) : null
+            ),
+        ];
+    }
+
+    /** Scheme, host and path only: a referrer's query and fragment can hold another site's private data. */
     private function cleanReferrer(mixed $referrer): ?string
     {
         if (!is_string($referrer) || $referrer === '') {
             return null;
         }
         $referrer = substr($referrer, 0, 2048);
-        return $this->isAbsoluteHttpUrl($referrer) ? $referrer : null;
+        if (!$this->isAbsoluteHttpUrl($referrer)) {
+            return null;
+        }
+
+        return explode('#', explode('?', $referrer, 2)[0], 2)[0];
     }
 
     /**
@@ -640,7 +676,9 @@ class VisitorContext
             return false;
         }
 
-        return strcasecmp($parts['host'], (string) $this->request->getServer('HTTP_HOST')) === 0;
+        $host = (string) preg_replace('/:\d+$/', '', (string) $this->request->getServer('HTTP_HOST'));
+
+        return strcasecmp($parts['host'], $host) === 0;
     }
 
     private function isAbsoluteHttpUrl(string $value): bool

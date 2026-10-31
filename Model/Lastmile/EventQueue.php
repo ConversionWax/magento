@@ -80,7 +80,7 @@ class EventQueue
             'eventId' => $eventId,
             'type' => $type,
             'ts' => (int) round(microtime(true) * 1000),
-            'path' => substr($this->request->getPathInfo(), 0, 2048),
+            'path' => substr($this->eventPath($attributes), 0, 2048),
             'productId' => $attributes['productId'] ?? null,
             'orderId' => $attributes['orderId'] ?? null,
             'value' => $attributes['value'] ?? null,
@@ -136,6 +136,17 @@ class EventQueue
             'clientIp' => $this->resolveClientIp(),
             'payload' => $payload,
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $attributes
+     */
+    private function eventPath(array $attributes): string
+    {
+        // The guest cart mask id is a bearer credential for that cart.
+        return is_string($attributes['path'] ?? null)
+            ? $attributes['path']
+            : (string) preg_replace('#/guest-carts/[^/]+#', '/guest-carts/-', $this->request->getPathInfo());
     }
 
     /**

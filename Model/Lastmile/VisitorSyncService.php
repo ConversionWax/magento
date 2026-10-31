@@ -17,10 +17,6 @@ use Magento\Framework\HTTP\PhpEnvironment\RemoteAddress;
 class VisitorSyncService
 {
     private const SDK_VERSION = 'magento-0.2.0';
-    // Same attribution allowlist as VisitorContext::sanitizeEntryUrl (utm_* and the collector's click ids).
-    private const ALLOWED_ATTRIBUTION_CLICK_IDS = [
-        'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid', 'epik', 'sccid', 'li_fat_id', 'twclid',
-    ];
 
     public function __construct(
         private readonly Config $config,
@@ -29,7 +25,9 @@ class VisitorSyncService
         private readonly CollectorClient $client,
         private readonly RemoteAddress $remoteAddress,
         private readonly Http $request,
-        private readonly ConsentResolverInterface $consentResolver
+        private readonly ConsentResolverInterface $consentResolver,
+        private readonly EventQueue $eventQueue,
+        private readonly StoreUrl $storeUrl
     ) {
     }
 
@@ -47,6 +45,13 @@ class VisitorSyncService
         $context = $this->visitorContext->get();
         if ($context === null) {
             return ['state' => 'granted', 'synced' => false, 'sid' => ''];
+        }
+        if ($context['isNew']) {
+            // A cached landing page never reaches PHP, so this is the only request that can report the
+            // session start. The collector records the arrival from the first event with isNew set.
+            $this->eventQueue->enqueue('page_view', [
+                'path' => (string) parse_url((string) $context['entryUrl'], PHP_URL_PATH),
+            ]);
         }
         $summary = $this->cookies->getSummary();
         $synced = true;
@@ -109,8 +114,8 @@ class VisitorSyncService
                 'pageviews' => 1,
             ],
             'arrival' => [
-                'url' => $this->arrivalUrl($context),
-                'referrer' => null,
+                'url' => $this->storeUrl->absolute($storeId, (string) $context['entryUrl']),
+                'referrer' => $context['entryReferrer'],
                 'ts' => $startedAt,
                 'isLanding' => true,
             ],
@@ -178,42 +183,6 @@ class VisitorSyncService
         }
 
         return $session;
-    }
-
-    /**
-     * Under Varnish the section request is the first request PHP sees, so the page the visitor landed on
-     * is the Referer of this request. Only a same-host Referer is used, reduced to path plus attribution
-     * parameters; otherwise the context entry URL is the fallback.
-     *
-     * @param array<string, mixed> $context
-     */
-    private function arrivalUrl(array $context): string
-    {
-        $referer = $this->request->getServer('HTTP_REFERER');
-        $parts = is_string($referer) && $referer !== '' ? parse_url(substr($referer, 0, 2048)) : false;
-        $host = (string) preg_replace('/:\d+$/', '', (string) $this->request->getServer('HTTP_HOST'));
-        if ($parts === false
-            || !in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
-            || strcasecmp((string) ($parts['host'] ?? ''), $host) !== 0
-        ) {
-            return (string) $context['entryUrl'];
-        }
-
-        $query = '';
-        if (($parts['query'] ?? '') !== '') {
-            parse_str($parts['query'], $params);
-            $allowed = [];
-            foreach ($params as $key => $value) {
-                $lowerKey = strtolower((string) $key);
-                if (is_string($value) && (str_starts_with($lowerKey, 'utm_')
-                    || in_array($lowerKey, self::ALLOWED_ATTRIBUTION_CLICK_IDS, true))) {
-                    $allowed[$key] = $value;
-                }
-            }
-            $query = $allowed === [] ? '' : '?' . http_build_query($allowed);
-        }
-
-        return substr(($parts['path'] ?? '/') . $query, 0, 2048);
     }
 
     /** @return array{device?: array{ua: string}} the key is omitted entirely when the user agent is empty */
