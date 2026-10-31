@@ -26,6 +26,12 @@ class VisitorSync implements ArgumentInterface
         return $this->config->isConfigured((int) $this->storeManager->getStore()->getId());
     }
 
+    public function isHyvaEnabled(): bool
+    {
+        return $this->isEnabled()
+            && $this->config->isHyvaEnabled((int) $this->storeManager->getStore()->getId());
+    }
+
     public function respectsRestriction(): bool
     {
         // Store-level system config only. Never the visitor's own allow/deny choice.

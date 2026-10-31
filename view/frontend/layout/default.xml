@@ -11,6 +11,14 @@
                 <arguments>
                     <argument name="view_model" xsi:type="object">Cwax\Banner\ViewModel\VisitorSync</argument>
                 </arguments>
+                <!-- Separate template so a theme compat module can replace the RequireJS start-up. -->
+                <block class="Magento\Framework\View\Element\Template"
+                       name="cwax.visitor.sync.init"
+                       template="Cwax_Banner::visitor-sync/init.phtml">
+                    <arguments>
+                        <argument name="view_model" xsi:type="object">Cwax\Banner\ViewModel\VisitorSync</argument>
+                    </arguments>
+                </block>
             </block>
         </referenceContainer>
     </body>

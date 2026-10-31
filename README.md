@@ -95,6 +95,12 @@ never cacheable (`Cache-Control: no-store`).
   the shim writes a 60-second `_cwer` cookie with the external referrer, without its query string.
   It writes nothing without consent.
 
+Hyva themes are supported in this module and need no extra package. Hyva has no RequireJS, so
+`layout/hyva_default.xml` swaps the start-up for `visitor-sync/hyva-init.phtml`. That handle exists
+only on Hyva themes, so Luma stores in the same install are not affected. Stores > Configuration >
+ConversionWax > Last Mile > Enable Hyva Support turns this off per store view. Set to No, a Hyva store
+sends no session start and writes no visitor cookies.
+
 Each section call is one short PHP request. If the collector is slow, visitors see no delay on page
 render, only a later cookie.
 

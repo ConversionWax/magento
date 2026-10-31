@@ -14,6 +14,7 @@ class Config
     private const XML_PATH_WEB_PROPERTY_ID = 'conversionwax_lastmile/connection/web_property_id';
     private const XML_PATH_API_TOKEN = 'conversionwax_lastmile/connection/api_token';
     private const XML_PATH_ENDPOINT = 'conversionwax_lastmile/connection/endpoint';
+    private const XML_PATH_HYVA_ENABLED = 'conversionwax_lastmile/connection/hyva_enabled';
     private const XML_PATH_SNIPPET_INSTALLED = 'conversionwax_lastmile/consent/snippet_installed';
     private const XML_PATH_CONSENT_FALLBACK_POLICY = 'conversionwax_lastmile/consent/fallback_policy';
 
@@ -39,6 +40,11 @@ class Config
             ScopeInterface::SCOPE_STORE,
             $storeId
         ));
+    }
+
+    public function isHyvaEnabled(int $storeId): bool
+    {
+        return $this->scopeConfig->isSetFlag(self::XML_PATH_HYVA_ENABLED, ScopeInterface::SCOPE_STORE, $storeId);
     }
 
     public function getEndpoint(int $storeId): string

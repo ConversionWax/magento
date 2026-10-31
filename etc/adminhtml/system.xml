@@ -76,6 +76,20 @@
                         <field id="enabled">1</field>
                     </depends>
                 </field>
+                <field id="hyva_enabled"
+                       translate="label comment"
+                       type="select"
+                       sortOrder="50"
+                       showInDefault="1"
+                       showInWebsite="1"
+                       showInStore="1">
+                    <label>Enable Hyva Support</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Applies only to store views on a Hyva theme. When set to No, those stores send no session start and write no visitor cookies. Flush the cache after you change this.</comment>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
             </group>
             <group id="consent"
                    translate="label"

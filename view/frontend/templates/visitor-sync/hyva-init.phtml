@@ -1,0 +1,77 @@
+<?php
+/**
+ * Hyva start-up for the sync component, selected by layout/hyva_default.xml. Hyva has no RequireJS, and it
+ * only fetches sections once a private_content_version cookie exists, so a first-time anonymous visitor on
+ * a cached page never loads cwax-visitor without this script. Static for every visitor of a store view.
+ *
+ * @var \Magento\Framework\View\Element\Template $block
+ * @var \Hyva\Theme\ViewModel\HyvaCsp $hyvaCsp
+ */
+declare(strict_types=1);
+
+/** @var \Cwax\Banner\ViewModel\VisitorSync $viewModel */
+$viewModel = $block->getData('view_model');
+if (!$viewModel->isHyvaEnabled()) {
+    return;
+}
+
+$source = <<<'JS'
+(function(w,d){
+var config=__CONFIG__;
+var SECTION='cwax-visitor';
+var STORAGE='mage-cache-storage';
+var MARKER='cwax-visitor-inputs';
+var SESSION_SECONDS=1800;
+var last=null;
+var cookieAllowed=function(){return /(?:^|; )user_allowed_save_cookie=[^;]/.test(d.cookie);};
+var gpc=function(){return !!(w.navigator&&w.navigator.globalPrivacyControl===true);};
+var inputs=function(){return (cookieAllowed()?'1':'0')+(gpc()?'1':'0');};
+var inputsChanged=function(){
+try{return w.sessionStorage.getItem(MARKER)!==inputs();}catch(e){return true;}
+};
+var remember=function(){
+try{w.sessionStorage.setItem(MARKER,inputs());}catch(e){}
+};
+var stored=function(){
+try{return JSON.parse(w.localStorage.getItem(STORAGE)||'{}')[SECTION]||null;}catch(e){return null;}
+};
+var publish=function(){
+var cw=w.cw;
+if(!cw||cw.__mgShim!==true){return;}
+var next=cw.consentState();
+if(next===last){return;}
+last=next;
+w.dispatchEvent(new w.CustomEvent('cw:consent',{detail:{state:next}}));
+};
+var needsLoad=function(section){
+if(!section||!section.state){return true;}
+if(section.state==='off'||section.state==='error'){return false;}
+var expected=!gpc()&&(config.restriction?cookieAllowed():true);
+if(expected&&section.state==='granted'){
+return w.Date.now()/1000-(section.data_id||0)>SESSION_SECONDS;
+}
+return (expected?section.state!=='granted':section.state==='granted')&&inputsChanged();
+};
+var load=function(){
+remember();
+return w.fetch(w.BASE_URL+'customer/section/load/?sections='+SECTION,{
+method:'GET',
+headers:{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}
+}).then(function(response){return response.ok&&response.json();}).then(function(data){
+if(!data||!data[SECTION]){return;}
+var all=JSON.parse(w.localStorage.getItem(STORAGE)||'{}')||{};
+all[SECTION]=data[SECTION];
+w.localStorage.setItem(STORAGE,JSON.stringify(all));
+publish();
+}).catch(function(){});
+};
+if(w.cw&&w.cw.__mgShim===true){last=w.cw.consentState();}
+w.addEventListener('private-content-loaded',function(){w.setTimeout(publish,0);});
+w.addEventListener('user-allowed-save-cookie',load);
+var start=function(){if(needsLoad(stored())){load();}};
+if(d.readyState==='loading'){d.addEventListener('DOMContentLoaded',start);}else{start();}
+})(window,document);
+JS;
+?>
+<script><?= /* @noEscape */ str_replace('__CONFIG__', $viewModel->getConfigJson(), $source) ?></script>
+<?php $hyvaCsp->registerInlineScript() ?>

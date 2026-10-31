@@ -60,6 +60,4 @@ JS;
 $shim = str_replace('__RESTRICTION__', $viewModel->respectsRestriction() ? 'true' : 'false', $shimSource);
 ?>
 <?= /* @noEscape */ $secureRenderer->renderTag('script', [], $shim, false) ?>
-<script type="text/x-magento-init">
-{"*": {"Cwax_Banner/js/visitor-sync": <?= /* @noEscape */ $viewModel->getConfigJson() ?>}}
-</script>
+<?= $block->getChildHtml('cwax.visitor.sync.init') ?>

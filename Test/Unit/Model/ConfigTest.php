@@ -12,6 +12,19 @@ use PHPUnit\Framework\TestCase;
 
 class ConfigTest extends TestCase
 {
+    public function testHyvaSupportFollowsTheStoreFlag(): void
+    {
+        $scopeConfig = $this->createStub(ScopeConfigInterface::class);
+        $scopeConfig->method('isSetFlag')->willReturnCallback(
+            static fn (string $path, string $scope, int $storeId): bool =>
+                $path === 'conversionwax_lastmile/connection/hyva_enabled' && $storeId === 1
+        );
+        $config = new Config($scopeConfig, $this->createStub(EncryptorInterface::class));
+
+        $this->assertTrue($config->isHyvaEnabled(1));
+        $this->assertFalse($config->isHyvaEnabled(2));
+    }
+
     #[DataProvider('sessionUrlProvider')]
     public function testSessionUrlIsDerivedFromTheEventsEndpoint(string $endpoint, string $expected): void
     {

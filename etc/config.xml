@@ -5,6 +5,7 @@
         <conversionwax_lastmile>
             <connection>
                 <enabled>0</enabled>
+                <hyva_enabled>1</hyva_enabled>
                 <endpoint>https://collect.conversionwax.com/v1/integrations/magento/events</endpoint>
             </connection>
             <consent>

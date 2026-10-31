@@ -13,10 +13,11 @@ use PHPUnit\Framework\TestCase;
 
 class VisitorSyncTest extends TestCase
 {
-    private function viewModel(bool $configured, bool $restrict): VisitorSync
+    private function viewModel(bool $configured, bool $restrict, bool $hyva = true): VisitorSync
     {
         $config = $this->createMock(Config::class);
         $config->method('isConfigured')->willReturn($configured);
+        $config->method('isHyvaEnabled')->willReturn($hyva);
         $cookieHelper = $this->createMock(CookieHelper::class);
         $cookieHelper->method('isCookieRestrictionModeEnabled')->willReturn($restrict);
         $store = $this->createMock(StoreInterface::class);
@@ -31,6 +32,13 @@ class VisitorSyncTest extends TestCase
     {
         $this->assertTrue($this->viewModel(true, true)->isEnabled());
         $this->assertFalse($this->viewModel(false, true)->isEnabled());
+    }
+
+    public function testHyvaSyncNeedsBothTheIntegrationAndTheHyvaSetting(): void
+    {
+        $this->assertTrue($this->viewModel(true, false)->isHyvaEnabled());
+        $this->assertFalse($this->viewModel(true, false, false)->isHyvaEnabled());
+        $this->assertFalse($this->viewModel(false, false)->isHyvaEnabled());
     }
 
     public function testConfigJsonCarriesOnlyTheRestrictionFlag(): void
