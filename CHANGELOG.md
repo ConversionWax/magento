@@ -14,4 +14,4 @@
   value is ignored, so no data patch is needed.
 - Admin help text no longer shows a URL.
 
-Releases up to 0.3.1 are recorded in their git tags and release commits.
+Releases up to 0.3.2 are recorded in their git tags and release commits.
