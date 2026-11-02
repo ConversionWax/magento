@@ -3,12 +3,12 @@
   "description": "ConversionWax banner widget and queued Last Mile server-event adapter for Magento 2",
   "type": "magento2-module",
   "license": "proprietary",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "require": {
     "php": "^8.1",
     "ext-curl": "*",
     "ext-json": "*",
-    "magento/framework": ">=103.0.6 <103.0.9",
+    "magento/framework": ">=103.0.6 <103.0.10",
     "magento/framework-message-queue": "^100.4",
     "magento/module-backend": "^102.0",
     "magento/module-catalog": "^104.0",
@@ -29,8 +29,8 @@
     "phpunit/phpunit": "^9.5 || ^10.5"
   },
   "conflict": {
-    "magento/product-community-edition": ">=2.4.9",
-    "magento/product-enterprise-edition": ">=2.4.9"
+    "magento/product-community-edition": ">=2.4.10",
+    "magento/product-enterprise-edition": ">=2.4.10"
   },
   "autoload": {
     "files": [

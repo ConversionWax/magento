@@ -70,7 +70,7 @@ class EventConsumer
             $curl->setOption(CURLOPT_FOLLOWLOCATION, false);
             $curl->addHeader('Authorization', 'Bearer ' . $this->config->getApiToken($storeId));
             $curl->addHeader('Content-Type', 'application/json');
-            $curl->addHeader('User-Agent', 'ConversionWax-Magento/0.2.0');
+            $curl->addHeader('User-Agent', 'ConversionWax-Magento/0.3.0');
             $curl->post($this->config->getEndpoint($storeId), $body);
             $status = $curl->getStatus();
         } catch (\Throwable $exception) {
