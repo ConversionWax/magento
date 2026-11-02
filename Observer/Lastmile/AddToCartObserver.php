@@ -49,7 +49,9 @@ class AddToCartObserver implements ObserverInterface
 
     private function enqueueItem(mixed $item): void
     {
-        if (!is_object($item)) {
+        // A configurable or bundle add creates a parent item plus child items;
+        // only the parent carries the price, so one click is one event.
+        if (!is_object($item) || (method_exists($item, 'getParentItem') && $item->getParentItem() !== null)) {
             return;
         }
         $sku = method_exists($item, 'getSku') ? (string) $item->getSku() : '';
