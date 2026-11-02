@@ -62,16 +62,16 @@
                         <field id="enabled">1</field>
                     </depends>
                 </field>
-                <field id="endpoint"
+                <field id="environment"
                        translate="label comment"
-                       type="text"
+                       type="select"
                        sortOrder="40"
                        showInDefault="1"
                        showInWebsite="1"
                        showInStore="1">
-                    <label>Collector Endpoint</label>
-                    <validate>required-entry validate-url</validate>
-                    <comment>Use https://dev.collect.conversionwax.com/v1/integrations/magento/events for staging.</comment>
+                    <label>Environment</label>
+                    <source_model>Cwax\Banner\Model\Config\Source\Environment</source_model>
+                    <comment>Use Production for live stores. Choose Staging only when ConversionWax support asks you to test against the ConversionWax staging service.</comment>
                     <depends>
                         <field id="enabled">1</field>
                     </depends>

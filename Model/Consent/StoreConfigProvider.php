@@ -77,10 +77,7 @@ class StoreConfigProvider implements StoreConfigProviderInterface
 
     private function fetchFromCollector(int $storeId, string $webPropertyId): ?string
     {
-        $host = $this->resolveHost($storeId);
-        if ($host === null) {
-            return null;
-        }
+        $host = $this->config->getCollectorHost($storeId);
 
         $curl = $this->curlFactory->create();
         $curl->setOption(CURLOPT_CONNECTTIMEOUT, self::CONNECT_TIMEOUT_SECONDS);
@@ -110,30 +107,6 @@ class StoreConfigProvider implements StoreConfigProviderInterface
             StoreConfigProviderInterface::CONSENT_MODE_CAPTURE_IMMEDIATELY,
             StoreConfigProviderInterface::CONSENT_MODE_WAIT_FOR_CONSENT,
         ], true) ? $mode : null;
-    }
-
-    /**
-     * Derives scheme+host from the already-configured, already-validated
-     * events endpoint rather than a second admin field: the collector's
-     * public config-fetch base URL is explicitly undecided as of this
-     * change (discovery notes staging/production hosts are not yet
-     * mapped), and reusing the vetted host keeps the admin form the same
-     * size. Re-validates the allowlist defensively rather than trusting
-     * caller ordering.
-     */
-    private function resolveHost(int $storeId): ?string
-    {
-        $endpoint = $this->config->getEndpoint($storeId);
-        $parts = parse_url($endpoint);
-        if (!isset($parts['scheme'], $parts['host']) || $parts['scheme'] !== 'https') {
-            return null;
-        }
-        $host = strtolower($parts['host']);
-        if ($host !== 'collect.conversionwax.com' && !str_ends_with($host, '.conversionwax.com')) {
-            return null;
-        }
-
-        return $parts['scheme'] . '://' . $host;
     }
 
     private function isUuid(string $value): bool

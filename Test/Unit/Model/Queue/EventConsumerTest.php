@@ -21,7 +21,7 @@ class EventConsumerTest extends TestCase
     {
         $config = $this->createStub(Config::class);
         $config->method('isConfigured')->willReturn(true);
-        $config->method('getEndpoint')->willReturn('https://collect.test/v1/integrations/magento/events');
+        $config->method('getEventsUrl')->willReturn('https://collect.test/v1/integrations/events');
         $config->method('getApiToken')->willReturn('token');
         $posted = null;
         $curl = $this->createStub(Curl::class);

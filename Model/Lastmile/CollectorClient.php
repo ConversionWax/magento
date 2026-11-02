@@ -27,7 +27,7 @@ class CollectorClient
     }
 
     /**
-     * The URL comes from Config::getSessionUrl, which only returns an allowlisted collector host.
+     * The URL comes from Config::getSessionUrl, which only returns a fixed collector host.
      *
      * @param int $storeId
      * @param array<string, mixed> $body SessionRequestBody
