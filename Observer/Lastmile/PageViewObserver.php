@@ -83,8 +83,10 @@ class PageViewObserver implements ObserverInterface
             $contentType = $contentType->current();
         }
         if (!is_object($contentType) || !method_exists($contentType, 'getFieldValue')) {
-            // No Content-Type header at all, most commonly a bare redirect response.
-            return false;
+            // Magento renders HTML pages without a Content-Type in the header
+            // bag; PHP sends default_mimetype for them. Redirects are already
+            // excluded by status code above.
+            return str_contains(strtolower((string) ini_get('default_mimetype')), 'text/html');
         }
         return str_contains(strtolower((string) $contentType->getFieldValue()), 'text/html');
     }
