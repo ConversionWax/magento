@@ -10,6 +10,7 @@ use Magento\Framework\App\Request\Http;
 use Magento\Framework\Event;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\HTTP\PhpEnvironment\Response;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class PageViewObserverTest extends TestCase
@@ -30,7 +31,7 @@ class PageViewObserverTest extends TestCase
         $this->assertPageView(true, $this->response(200, 'text/html; charset=UTF-8'));
     }
 
-    /** @dataProvider nonPageResponses */
+    #[DataProvider('nonPageResponses')]
     public function testNonPageResponsesAreNotPageViews(int $status, ?string $contentType): void
     {
         $this->assertPageView(false, $this->response($status, $contentType));
@@ -69,13 +70,24 @@ class PageViewObserverTest extends TestCase
         $this->assertPageView(false, $this->response(), self::BROWSER, true);
     }
 
+    /**
+     * Varnish fetches each ESI block (eg the top menu) as its own GET with
+     * the visitor's cookies; it is part of a page, not a page view.
+     */
+    public function testVarnishEsiBlocksAreNotPageViews(): void
+    {
+        $this->assertPageView(false, $this->response(), self::BROWSER, false, 'page_cache');
+    }
+
     private function assertPageView(
         bool $expected,
         Response $response,
         string $userAgent = self::BROWSER,
-        bool $ajax = false
+        bool $ajax = false,
+        string $moduleName = 'cms'
     ): void {
         $request = $this->createMock(Http::class);
+        $request->method('getModuleName')->willReturn($moduleName);
         $request->method('isGet')->willReturn(true);
         $request->method('isXmlHttpRequest')->willReturn($ajax);
         $request->method('getServer')->with('HTTP_USER_AGENT')->willReturn($userAgent);

@@ -45,6 +45,10 @@ class PageViewObserver implements ObserverInterface
         if (!$this->request->isGet() || $this->request->isXmlHttpRequest()) {
             return;
         }
+        if ($this->request->getModuleName() === 'page_cache') {
+            // Varnish ESI block fetches (eg the top menu) are parts of a page.
+            return;
+        }
 
         $response = $observer->getEvent()->getResponse();
         if (!is_object($response) || !method_exists($response, 'getStatusCode')) {
