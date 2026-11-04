@@ -70,8 +70,8 @@ class EventConsumer
             $curl->setOption(CURLOPT_FOLLOWLOCATION, false);
             $curl->addHeader('Authorization', 'Bearer ' . $this->config->getApiToken($storeId));
             $curl->addHeader('Content-Type', 'application/json');
-            $curl->addHeader('User-Agent', 'ConversionWax-Magento/0.3.2');
-            $curl->post($this->config->getEndpoint($storeId), $body);
+            $curl->addHeader('User-Agent', 'ConversionWax-Magento/0.4.0');
+            $curl->post($this->config->getEventsUrl($storeId), $body);
             $status = $curl->getStatus();
         } catch (\Throwable $exception) {
             if ($this->retry($message, 'network_error', self::MAX_ATTEMPTS)) {

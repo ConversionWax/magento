@@ -68,10 +68,10 @@ never cacheable (`Cache-Control: no-store`).
   clicks Allow the section answers `denied` and deletes any `_cwid`, `_cwms`, `_cws`, `_cwvs`
   cookies. With restriction off, the section runs for every visitor. The section answers `off` and
   does nothing when the integration is not configured.
-- When allowed, the section calls the collector `POST /v1/session` on the same host as the events
-  endpoint, from Magento, with a 1.5 s limit. It forwards the visitor IP and user agent (for geo
-  and device only) and reuses `_cwid`. The call authenticates with the integration API token as an
-  `Authorization: Bearer` header, the same token the event consumer uses (contract C9). The token
+- When allowed, the section calls the collector `POST /v1/session` on the selected environment's
+  collector host, from Magento, with a 1.5 s limit. It forwards the visitor IP and user agent (for
+  geo and device only) and reuses `_cwid`. The call authenticates with the integration API token as
+  an `Authorization: Bearer` header, the same token the event consumer uses (contract C9). The token
   never reaches the browser. On any failure the section writes no cookies and the embed shows
   fallback content. The call happens at most once per Magento session, plus once after an order.
 - `window.cw.consentState()` answers synchronously (`'granted'` or `'denied'`) and the event
@@ -121,11 +121,13 @@ The package requires PHP 8.1 or later and Magento 2.4.
 1. In ConversionWax, open the website's Last Mile tracking settings.
 2. Under Magento server events, generate a connection token and copy it immediately.
 3. In Magento Admin, open Stores > Configuration > ConversionWax > Last Mile.
-4. Enable the integration and enter the ConversionWax Website ID, connection token, and collector
-   endpoint.
-5. For staging, use
-   `https://dev.collect.conversionwax.com/v1/integrations/magento/events`. Production defaults to
-   `https://collect.conversionwax.com/v1/integrations/magento/events`.
+4. Enable the integration and enter the ConversionWax Website ID and connection token.
+5. Leave Environment on Production. Choose Staging only to test against the ConversionWax staging
+   service.
+
+The collector address is not a setting. Each environment maps to a fixed ConversionWax host in the
+module, and server events, the session call and the consent config lookup all go to that host.
+The token identifies the install, so no integration ID is needed.
 
 The token is shown once by ConversionWax, stored only as a SHA-256 digest centrally, and stored by
 Magento using its encrypted configuration backend. Configure values per store view when different
@@ -148,13 +150,14 @@ Resolvers included in this module:
   and the visitor has not accepted. It never affirmatively grants on its own; it is a veto, not a
   primary gate.
 - **Consent mode.** Reads the store's `consentMode` (`capture_immediately` or `wait_for_consent`)
-  from the ConversionWax collector, cached locally for 5 minutes on success and 30 seconds when
-  unresolved. Under `capture_immediately` it grants both signals outright, matching the browser
-  snippet's own unconditional behavior in that mode. Under `wait_for_consent` it abstains and lets
-  the browser-snippet resolver below decide, unless **Browser Snippet Installed** (see below) is
-  set to No, in which case it falls back to the **Server-Only Fallback Policy**. If the collector's
-  config cannot be resolved at all (network failure, unknown store), it also falls back to that
-  policy.
+  from the ConversionWax collector (`GET /v1/integrations/config` on the selected environment's
+  host, authenticated with the connection token as `Authorization: Bearer`), cached locally for 5
+  minutes on success and 30 seconds when unresolved. Under `capture_immediately` it grants both
+  signals outright, matching the browser snippet's own unconditional behavior in that mode. Under
+  `wait_for_consent` it abstains and lets the browser-snippet resolver below decide, unless
+  **Browser Snippet Installed** (see below) is set to No, in which case it falls back to the
+  **Server-Only Fallback Policy**. If the collector's config cannot be resolved at all (network
+  failure, unknown or inactive token, website switched off), it also falls back to that policy.
 - **Browser snippet identity.** Under a confirmed `wait_for_consent` mode only, this resolver reads
   the ConversionWax browser snippet's own session cookie (`_cws`, not `_cwid`/`_cwvs`, which persist
   400 days and only prove consent was granted at some point, not that it applies now). Presence

@@ -18,7 +18,7 @@ class StoreConfigProvider implements StoreConfigProviderInterface
     private const UNRESOLVED_SENTINEL = '__unresolved__';
     private const CONNECT_TIMEOUT_SECONDS = 2;
     private const REQUEST_TIMEOUT_SECONDS = 3;
-    private const CONFIG_PATH_TEMPLATE = '/v1/config/%s';
+    private const CONFIG_PATH = '/v1/integrations/config';
 
     /** @var array<string, string|null> in-process memo keyed by web property id */
     private array $memo = [];
@@ -63,7 +63,7 @@ class StoreConfigProvider implements StoreConfigProviderInterface
             return $mode;
         }
 
-        $mode = $this->fetchFromCollector($storeId, $webPropertyId);
+        $mode = $this->fetchFromCollector($storeId);
         $this->cache->save(
             $mode ?? self::UNRESOLVED_SENTINEL,
             $cacheKey,
@@ -75,10 +75,10 @@ class StoreConfigProvider implements StoreConfigProviderInterface
         return $mode;
     }
 
-    private function fetchFromCollector(int $storeId, string $webPropertyId): ?string
+    private function fetchFromCollector(int $storeId): ?string
     {
-        $host = $this->resolveHost($storeId);
-        if ($host === null) {
+        $token = $this->config->getApiToken($storeId);
+        if ($token === '') {
             return null;
         }
 
@@ -88,14 +88,15 @@ class StoreConfigProvider implements StoreConfigProviderInterface
         $curl->setOption(CURLOPT_SSL_VERIFYPEER, true);
         $curl->setOption(CURLOPT_SSL_VERIFYHOST, 2);
         $curl->setOption(CURLOPT_FOLLOWLOCATION, false);
-        $curl->get($host . sprintf(self::CONFIG_PATH_TEMPLATE, $webPropertyId));
+        // The connection token identifies the install, so the URL carries no ID.
+        $curl->addHeader('Authorization', 'Bearer ' . $token);
+        $curl->get($this->config->getCollectorHost($storeId) . self::CONFIG_PATH);
 
         if ($curl->getStatus() !== 200) {
-            // Matches the snippet's own contract: any non-200 is treated as
-            // "no config," not just 404 (see discovery: unknown, flag-off,
-            // and errored stores all respond 404; the 200/disabled:true
-            // case is a valid config with a real consentMode and is not
-            // affected by this branch).
+            // Any non-200 is "no config". The collector answers 401 for an
+            // unknown or inactive token and for a disabled website. A
+            // 200 with disabled:true is still a valid config with a real
+            // consentMode and is not affected by this branch.
             return null;
         }
 
@@ -110,30 +111,6 @@ class StoreConfigProvider implements StoreConfigProviderInterface
             StoreConfigProviderInterface::CONSENT_MODE_CAPTURE_IMMEDIATELY,
             StoreConfigProviderInterface::CONSENT_MODE_WAIT_FOR_CONSENT,
         ], true) ? $mode : null;
-    }
-
-    /**
-     * Derives scheme+host from the already-configured, already-validated
-     * events endpoint rather than a second admin field: the collector's
-     * public config-fetch base URL is explicitly undecided as of this
-     * change (discovery notes staging/production hosts are not yet
-     * mapped), and reusing the vetted host keeps the admin form the same
-     * size. Re-validates the allowlist defensively rather than trusting
-     * caller ordering.
-     */
-    private function resolveHost(int $storeId): ?string
-    {
-        $endpoint = $this->config->getEndpoint($storeId);
-        $parts = parse_url($endpoint);
-        if (!isset($parts['scheme'], $parts['host']) || $parts['scheme'] !== 'https') {
-            return null;
-        }
-        $host = strtolower($parts['host']);
-        if ($host !== 'collect.conversionwax.com' && !str_ends_with($host, '.conversionwax.com')) {
-            return null;
-        }
-
-        return $parts['scheme'] . '://' . $host;
     }
 
     private function isUuid(string $value): bool
