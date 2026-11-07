@@ -222,6 +222,107 @@ class VisitorSyncServiceTest extends TestCase
         $service->sync(1);
     }
 
+    /** @var array<int, array{0: string, 1: array<string, mixed>}> every enqueue() call, in order */
+    private array $queued = [];
+
+    private function captureEvents(): void
+    {
+        $this->events->method('enqueue')->willReturnCallback(
+            function (string $type, array $attributes = []): void {
+                $this->queued[] = [$type, $attributes];
+            }
+        );
+    }
+
+    private function nowMs(int $offset = 0): int
+    {
+        return (int) round(microtime(true) * 1000) + $offset;
+    }
+
+    public function testAReportedViewOnAContinuingSessionQueuesItsPageView(): void
+    {
+        $service = $this->service(['entryUrl' => '/', 'startedAt' => $this->nowMs(-600000)]);
+        $this->captureEvents();
+        $this->respond([['summary' => 'new.sig']]);
+
+        $service->sync(1, ['path' => '/ocmlabs/blog.html', 'productId' => '']);
+
+        $this->assertSame([['page_view', ['path' => '/ocmlabs/blog.html']]], $this->queued);
+    }
+
+    public function testAReportedProductPageQueuesAPageViewAndAProductViewWithTheSeoPath(): void
+    {
+        $service = $this->service(['entryUrl' => '/', 'startedAt' => $this->nowMs(-600000)]);
+        $this->captureEvents();
+        $this->respond([['summary' => 'new.sig']]);
+
+        $service->sync(1, ['path' => '/ocmlabs/seo.html', 'productId' => 'seo']);
+
+        $this->assertSame([
+            ['page_view', ['path' => '/ocmlabs/seo.html']],
+            ['product_view', ['path' => '/ocmlabs/seo.html', 'productId' => 'seo']],
+        ], $this->queued);
+    }
+
+    public function testANewSessionWithAReportedViewQueuesOneSessionStartForThatPath(): void
+    {
+        $service = $this->service(['isNew' => true, 'entryUrl' => '/ocmlabs/seo.html?utm_source=x']);
+        $this->captureEvents();
+        $this->respond([['summary' => 'new.sig']]);
+
+        $service->sync(1, ['path' => '/ocmlabs/seo.html', 'productId' => 'seo']);
+
+        $this->assertSame([
+            ['page_view', ['path' => '/ocmlabs/seo.html']],
+            ['product_view', ['path' => '/ocmlabs/seo.html', 'productId' => 'seo']],
+        ], $this->queued);
+    }
+
+    public function testAViewOfTheLandingPageJustAfterItsSessionStartIsNotCountedTwice(): void
+    {
+        // Hyva's own full section reload started the session for this page a moment ago.
+        $service = $this->service(['entryUrl' => '/ocmlabs/seo.html', 'startedAt' => $this->nowMs(-2000)]);
+        $this->captureEvents();
+        $this->respond([['summary' => 'new.sig']]);
+
+        $service->sync(1, ['path' => '/ocmlabs/seo.html', 'productId' => 'seo']);
+
+        $this->assertSame([['product_view', ['path' => '/ocmlabs/seo.html', 'productId' => 'seo']]], $this->queued);
+    }
+
+    public function testAReloadOfTheLandingPageAFewSecondsLaterIsCounted(): void
+    {
+        $service = $this->service(['entryUrl' => '/ocmlabs/seo.html', 'startedAt' => $this->nowMs(-5000)]);
+        $this->captureEvents();
+        $this->respond([['summary' => 'new.sig']]);
+
+        $service->sync(1, ['path' => '/ocmlabs/seo.html', 'productId' => 'seo']);
+
+        $this->assertSame([
+            ['page_view', ['path' => '/ocmlabs/seo.html']],
+            ['product_view', ['path' => '/ocmlabs/seo.html', 'productId' => 'seo']],
+        ], $this->queued);
+    }
+
+    public function testAnotherPageJustAfterTheSessionStartIsCounted(): void
+    {
+        $service = $this->service(['entryUrl' => '/ocmlabs/', 'startedAt' => $this->nowMs(-2000)]);
+        $this->captureEvents();
+        $this->respond([['summary' => 'new.sig']]);
+
+        $service->sync(1, ['path' => '/ocmlabs/seo.html', 'productId' => '']);
+
+        $this->assertSame([['page_view', ['path' => '/ocmlabs/seo.html']]], $this->queued);
+    }
+
+    public function testADeniedVisitorQueuesNoReportedView(): void
+    {
+        $service = $this->service(storage: false, mocks: ['events']);
+        $this->events->expects($this->never())->method('enqueue');
+
+        $service->sync(1, ['path' => '/ocmlabs/seo.html', 'productId' => 'seo']);
+    }
+
     public function testANewSessionStillQueuesItsPageViewWhenTheCollectorCallFails(): void
     {
         $service = $this->service(['isNew' => true], mocks: ['events']);

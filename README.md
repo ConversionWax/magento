@@ -34,8 +34,8 @@ not a replay buffer.
 
 | Magento server event | Last Mile event | Key data |
 | --- | --- | --- |
-| Frontend GET pre-response event | `page_view` | path, entry URL, referrer, user agent |
-| `catalog_controller_product_view` | `product_view` | SKU |
+| `cwax-visitor` section load, once per page view | `page_view` | path, entry URL, referrer, user agent |
+| `cwax-visitor` section load on a product page | `product_view` | path, SKU |
 | `sales_quote_product_add_after` | `add_to_cart` | SKU, including REST and GraphQL quote mutation |
 | Checkout controller predispatch | `checkout_start` | path |
 | `checkout_submit_all_after` | `purchase` | increment ID, grand total, currency, customer, first SKU |
@@ -47,12 +47,17 @@ are maintained in first-party `_cwid` and `_cwms` cookies. A session keeps its o
 and referrer, which lets Last Mile show a return visit from a different source as a new session and
 source in the order timeline.
 
-Server-side coverage has one infrastructure boundary. The pre-response observer captures page
-views served from Magento's built-in full-page cache, but product classification still needs a
-controller dispatch. A response served entirely upstream by Varnish, Fastly, or another CDN never
-reaches Magento PHP, so neither view event is visible. Cart, checkout, login, and purchase requests
-still reach Magento. Exact upstream-cache coverage requires a future server-side edge-log adapter.
-The module does not silently add a browser event sender. It does add one AJAX customer-data section, described below.
+Page and product views are reported by the browser, not by a server observer. A page served
+from Magento's built-in full-page cache, Varnish, Fastly, Cloudflare or another CDN never runs the
+product controller, and a CDN hit never reaches PHP at all, so a server observer missed those
+views. Instead, once the page has loaded, the module's start-up script loads the `cwax-visitor`
+section (below) with the page path (`cw_path`, from `location.pathname`) and, on a product page,
+the SKU (`cw_product`, from a `<meta name="cwax-product">` tag the product page renders). That
+request is never cacheable, so it reaches Magento on every page view, and Magento queues the
+`page_view` and `product_view` from it. The path is the public URL the visitor sees, for example
+`/blue-shirt.html`, including any store base path. Browser prefetches never run the script, and a
+prerendered page reports only once it is shown. A visitor without JavaScript sends no view events.
+Cart, checkout, login and purchase events are still server events.
 
 ## Visitor cookies and consent (Last Mile personalization)
 
@@ -91,7 +96,9 @@ never cacheable (`Cache-Control: no-store`).
   carries the buyer claims (`hp`, `lp`).
 - Under a full-page cache the section request is the first request PHP sees. The module takes the
   landing page and its attribution parameters from that request's same-host `Referer`, and reports
-  the session start with a `page_view` for that page. When the visitor arrives from another site,
+  the session start with a `page_view` for that page. A view report that follows within 3 seconds
+  for the same page (for example after Hyva's own full section reload started the session) adds
+  only its `product_view`, so the landing page is counted once. When the visitor arrives from another site,
   the shim writes a 60-second `_cwer` cookie with the external referrer, without its query string.
   It writes nothing without consent.
 

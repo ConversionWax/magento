@@ -1,0 +1,18 @@
+<?php
+/**
+ * Static for every visitor of a product page. The visitor-sync start-up reads it and reports the
+ * product_view with the cwax-visitor section load.
+ *
+ * @var \Magento\Framework\View\Element\Template $block
+ * @var \Magento\Framework\Escaper $escaper
+ */
+declare(strict_types=1);
+
+/** @var \Cwax\Banner\ViewModel\ProductView $viewModel */
+$viewModel = $block->getData('view_model');
+$sku = $viewModel->getSku();
+if ($sku === '') {
+    return;
+}
+?>
+<meta name="cwax-product" content="<?= $escaper->escapeHtmlAttr($sku) ?>">

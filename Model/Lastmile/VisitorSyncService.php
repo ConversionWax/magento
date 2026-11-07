@@ -16,7 +16,11 @@ use Magento\Framework\HTTP\PhpEnvironment\RemoteAddress;
  */
 class VisitorSyncService
 {
-    private const SDK_VERSION = 'magento-0.4.0';
+    private const SDK_VERSION = 'magento-0.5.0';
+    // A session start reported by another section load (Hyva's full reload, Luma's customer-data) just
+    // before this page's view report already counted the landing page. The report follows that load at
+    // once, so the window only has to cover one request; a visitor's own reload takes longer.
+    private const START_ECHO_MS = 3000;
 
     public function __construct(
         private readonly Config $config,
@@ -31,8 +35,11 @@ class VisitorSyncService
     ) {
     }
 
-    /** @return array{state:string,synced:bool,sid:string} state is 'denied' when storage consent is missing */
-    public function sync(int $storeId): array
+    /**
+     * @param array{path:string,productId:string}|null $view the page the browser reports with this request
+     * @return array{state:string,synced:bool,sid:string} state is 'denied' when storage consent is missing
+     */
+    public function sync(int $storeId, ?array $view = null): array
     {
         // Hard requirement: consent first. Nothing below may run (no identity mint, no collector call,
         // no cookie write) unless storage consent is granted.
@@ -46,11 +53,18 @@ class VisitorSyncService
         if ($context === null) {
             return ['state' => 'granted', 'synced' => false, 'sid' => ''];
         }
+        $entryPath = (string) parse_url((string) $context['entryUrl'], PHP_URL_PATH);
         if ($context['isNew']) {
-            // A cached landing page never reaches PHP, so this is the only request that can report the
-            // session start. The collector records the arrival from the first event with isNew set.
-            $this->eventQueue->enqueue('page_view', [
-                'path' => (string) parse_url((string) $context['entryUrl'], PHP_URL_PATH),
+            // A cached landing page never reaches PHP, so a section load is the only request that can report
+            // the session start. The collector records the arrival from the first event with isNew set.
+            $this->eventQueue->enqueue('page_view', ['path' => $view['path'] ?? $entryPath]);
+        } elseif ($view !== null && !$this->echoesSessionStart($context, $entryPath, $view['path'])) {
+            $this->eventQueue->enqueue('page_view', ['path' => $view['path']]);
+        }
+        if ($view !== null && $view['productId'] !== '') {
+            $this->eventQueue->enqueue('product_view', [
+                'path' => $view['path'],
+                'productId' => $view['productId'],
             ]);
         }
         $summary = $this->cookies->getSummary();
@@ -89,6 +103,14 @@ class VisitorSyncService
         }
 
         return ['state' => 'granted', 'synced' => $synced, 'sid' => (string) $context['sessionId']];
+    }
+
+    /** @param array<string, mixed> $context */
+    private function echoesSessionStart(array $context, string $entryPath, string $viewPath): bool
+    {
+        $now = (int) round(microtime(true) * 1000);
+
+        return $viewPath === $entryPath && $now - (int) $context['startedAt'] < self::START_ECHO_MS;
     }
 
     /**

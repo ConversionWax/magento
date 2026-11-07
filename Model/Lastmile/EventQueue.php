@@ -8,13 +8,14 @@ use Cwax\Banner\Api\ConsentResolverInterface;
 use Cwax\Banner\Api\Data\ConsentDecisionInterface;
 use Cwax\Banner\Model\Config;
 use Cwax\Banner\Model\Queue\MessagePublisher;
+use Magento\Framework\App\Request\Http as HttpRequest;
 use Magento\Framework\App\RequestInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
 
 class EventQueue
 {
-    private const SDK_VERSION = 'magento-0.4.0';
+    private const SDK_VERSION = 'magento-0.5.0';
     private bool $sessionStartQueued = false;
     private ?ConsentDecisionInterface $consentDecision = null;
 
@@ -46,6 +47,12 @@ class EventQueue
     /** @param array<string, mixed> $attributes */
     private function enqueueInternal(string $type, array $attributes): void
     {
+        if ($this->isSpeculativeLoad()) {
+            // Checked before visitorContext->get() so a page the shopper has
+            // not opened neither reports a view nor touches their cookies.
+            return;
+        }
+
         $storeId = (int) $this->storeManager->getStore()->getId();
         if (!$this->config->isConfigured($storeId)) {
             return;
@@ -143,10 +150,50 @@ class EventQueue
      */
     private function eventPath(array $attributes): string
     {
+        if (is_string($attributes['path'] ?? null)) {
+            return $attributes['path'];
+        }
         // The guest cart mask id is a bearer credential for that cart.
-        return is_string($attributes['path'] ?? null)
-            ? $attributes['path']
-            : (string) preg_replace('#/guest-carts/[^/]+#', '/guest-carts/-', $this->request->getPathInfo());
+        return (string) preg_replace('#/guest-carts/[^/]+#', '/guest-carts/-', $this->requestPath());
+    }
+
+    /**
+     * Browsers load pages before a click (Hyva's default speculation rules
+     * prefetch product links on hover, or on viewport on mobile). Those
+     * requests run the controller on a page cache miss, so without this every
+     * prefetched product reported a product_view and a page_view.
+     */
+    private function isSpeculativeLoad(): bool
+    {
+        if (!$this->request instanceof HttpRequest) {
+            return false;
+        }
+        foreach (['Sec-Purpose', 'Purpose', 'X-Purpose', 'X-Moz'] as $header) {
+            $value = strtolower((string) $this->request->getHeader($header));
+            if (str_contains($value, 'prefetch')
+                || str_contains($value, 'prerender')
+                || str_contains($value, 'preview')
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The URL rewrite router replaces the path info with the internal route
+     * (/catalog/product/view/id/27), so storefront requests report the path the
+     * visitor actually requested (/blue-shirt.html). Neither includes the query.
+     */
+    private function requestPath(): string
+    {
+        if ($this->request instanceof HttpRequest) {
+            $original = (string) $this->request->getOriginalPathInfo();
+            if ($original !== '') {
+                return $original;
+            }
+        }
+        return (string) $this->request->getPathInfo();
     }
 
     /**

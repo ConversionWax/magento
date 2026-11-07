@@ -43,10 +43,14 @@ class VisitorTest extends TestCase
         return $stores;
     }
 
-    private function request(string $fullActionName): RequestHttp
+    /** @param array<string, mixed> $params */
+    private function request(string $fullActionName, array $params = []): RequestHttp
     {
         $request = $this->createStub(RequestHttp::class);
         $request->method('getFullActionName')->willReturn($fullActionName);
+        $request->method('getParam')->willReturnCallback(
+            static fn (string $key): mixed => $params[$key] ?? null
+        );
         $request->method('getUriString')->willReturn('https://shop.test/customer/section/load/');
         $request->method('getServer')->willReturn(null);
 
@@ -123,7 +127,8 @@ class VisitorTest extends TestCase
         return [$section, $context, $response];
     }
 
-    private function section(bool $configured): Visitor
+    /** @param array<string, mixed> $params */
+    private function section(bool $configured, array $params = [], string $action = 'customer_section_load'): Visitor
     {
         $config = $this->createStub(Config::class);
         $config->method('isConfigured')->willReturn($configured);
@@ -135,10 +140,82 @@ class VisitorTest extends TestCase
             $this->stores(),
             $this->sync,
             $this->context,
-            $this->request('customer_section_load'),
+            $this->request($action, $params),
             $this->realResponse(),
             $this->createStub(LoggerInterface::class)
         );
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     * @return array{path:string,productId:string}|null what the section passed to sync()
+     */
+    private function reportedView(array $params, string $action = 'customer_section_load'): ?array
+    {
+        $section = $this->section(true, $params, $action);
+        $passed = 'not called';
+        $this->sync->method('sync')->willReturnCallback(
+            function (int $storeId, ?array $view = null) use (&$passed): array {
+                $passed = $view;
+
+                return ['state' => 'granted', 'synced' => true, 'sid' => 's'];
+            }
+        );
+        $section->getSectionData();
+        $this->assertNotSame('not called', $passed);
+
+        return $passed;
+    }
+
+    public function testTheReportedPathAndSkuArePassedToTheSync(): void
+    {
+        $this->assertSame(
+            ['path' => '/ocmlabs/seo.html', 'productId' => 'seo'],
+            $this->reportedView(['cw_path' => '/ocmlabs/seo.html', 'cw_product' => ' seo '])
+        );
+        $this->assertSame(
+            ['path' => '/ocmlabs/', 'productId' => ''],
+            $this->reportedView(['cw_path' => '/ocmlabs/'])
+        );
+    }
+
+    public function testASectionLoadWithoutAPathReportsNoView(): void
+    {
+        $this->assertNull($this->reportedView([]));
+        $this->assertNull($this->reportedView(['cw_product' => 'seo']));
+        $this->assertNull($this->reportedView(['cw_path' => ['/a']]));
+    }
+
+    public function testAQueryOrFragmentIsDroppedFromTheReportedPath(): void
+    {
+        $this->assertSame(
+            ['path' => '/account/confirm', 'productId' => ''],
+            $this->reportedView(['cw_path' => '/account/confirm?key=secret#x'])
+        );
+    }
+
+    public function testAPathThatIsNotOnThisStoreIsRejected(): void
+    {
+        foreach (['https://evil.test/x', '//evil.test/x', 'relative', '', "/a\nb", '/' . str_repeat('a', 2048)] as $path) {
+            $this->assertNull($this->reportedView(['cw_path' => $path]), var_export($path, true));
+        }
+    }
+
+    public function testAnImplausibleSkuIsDroppedButThePageViewStays(): void
+    {
+        $this->assertSame(
+            ['path' => '/x.html', 'productId' => ''],
+            $this->reportedView(['cw_path' => '/x.html', 'cw_product' => str_repeat('s', 65)])
+        );
+        $this->assertSame(
+            ['path' => '/x.html', 'productId' => ''],
+            $this->reportedView(['cw_path' => '/x.html', 'cw_product' => "a\tb"])
+        );
+    }
+
+    public function testOutsideTheSectionEndpointRequestParametersNeverBecomeAView(): void
+    {
+        $this->assertNull($this->reportedView(['cw_path' => '/x.html', 'cw_product' => 'seo'], 'cms_index_index'));
     }
 
     public function testReturnsOffWhenNotConfiguredAndTouchesNothing(): void
@@ -153,7 +230,7 @@ class VisitorTest extends TestCase
     public function testSyncsAndFlushesWhenConfigured(): void
     {
         $section = $this->section(true);
-        $this->sync->expects($this->once())->method('sync')->with(3)
+        $this->sync->expects($this->once())->method('sync')->with(3, null)
             ->willReturn(['state' => 'granted', 'synced' => true, 'sid' => 's']);
         $this->context->expects($this->once())->method('flush');
 

@@ -4,13 +4,16 @@
  *  - fires cw:consent when the synchronous window.cw.consentState() changes (the shim is in the template),
  *  - forces one section reload when the stored section disagrees with the visitor's cookie choice or
  *    Global Privacy Control.
- * It sends no events of its own.
+ *  - reports each page view: once customer-data is ready it loads the section with the page path and, on a
+ *    product page, the SKU from product-view.phtml (the server turns them into page_view and product_view).
+ *    A prerendered page waits until it is shown. A stored denial nothing has changed sends nothing.
  */
 define([
     'jquery',
     'Magento_Customer/js/customer-data',
+    'mage/url',
     'mage/cookies'
-], function ($, customerData) {
+], function ($, customerData, urlBuilder) {
     'use strict';
 
     var SECTION = 'cwax-visitor';
@@ -37,6 +40,7 @@ define([
         var restriction = !!(config && config.restriction);
         var section = customerData.get(SECTION);
         var reloaded = false;
+        var reportSent = false;
 
         function cookieAllowed() {
             return !!$.mage.cookies.get(ALLOW_COOKIE);
@@ -97,6 +101,68 @@ define([
             customerData.reload([SECTION], true);
         }
 
+        function view() {
+            var meta = document.querySelector('meta[name="cwax-product"]');
+            var product = meta && meta.getAttribute('content');
+            var params = { sections: SECTION, cw_path: window.location.pathname };
+
+            if (product) {
+                params.cw_product = product;
+            }
+
+            return params;
+        }
+
+        // The section load with this page's view. It also refreshes the section, so no reload is needed after it.
+        function report() {
+            reloaded = true;
+            reportSent = true;
+            remember();
+            $.ajax({
+                url: urlBuilder.build('customer/section/load/'),
+                type: 'GET',
+                dataType: 'json',
+                data: view()
+            }).done(function (data) {
+                var next = data && data[SECTION];
+
+                if (!(next && next.state === 'granted')) {
+                    reportSent = false;
+                }
+                if (next) {
+                    customerData.set(SECTION, next);
+                }
+            }).fail(function () {
+                reportSent = false;
+            });
+        }
+
+        function wantsReport(data) {
+            var state = data && data.state;
+
+            if (state === 'off' || state === 'error') {
+                return false;
+            }
+
+            return state === 'granted'
+                || (needsReload(data, restriction, cookieAllowed(), gpc()) && (!state || inputsChanged()));
+        }
+
+        function begin() {
+            var data = section();
+
+            if (document.prerendering) {
+                document.addEventListener('prerenderingchange', begin, { once: true });
+                return;
+            }
+            if (wantsReport(data)) {
+                publish();
+                report();
+            } else {
+                apply(data);
+            }
+        }
+
         function apply(data) {
             publish();
             if (!reloaded && needsReload(data, restriction, cookieAllowed(), gpc())
@@ -110,9 +176,18 @@ define([
             // Magento's cookie notice triggers this after it stored the allow cookie.
             reloaded = false;
             publish();
-            reload();
+            if (reportSent) {
+                reload();
+            } else {
+                report();
+            }
         });
-        apply(section());
+        // customer-data may reload sections of its own first; reporting after it keeps one session start.
+        if (typeof customerData.getInitCustomerData === 'function') {
+            customerData.getInitCustomerData().done(begin);
+        } else {
+            begin();
+        }
     }
 
     init.needsReload = needsReload;

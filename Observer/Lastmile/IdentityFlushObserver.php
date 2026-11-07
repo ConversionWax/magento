@@ -13,13 +13,10 @@ use Psr\Log\LoggerInterface;
  * Writes the Last Mile identity cookies, if any identity was resolved during
  * this request, now that the response's Cache-Control header is final.
  *
- * Registered independently of PageViewObserver on the same
- * controller_front_send_response_before event (see etc/frontend/events.xml)
- * so the flush still runs when PageViewObserver bails out early - eg a
- * non-GET request, an XHR request, a non-2xx status, a non-HTML response, or
- * a likely bot user agent. This observer is declared after PageViewObserver
- * in that file, so a page view whose identity is first resolved inside
- * PageViewObserver's own call is still flushed here in the same event pass.
+ * Registered on controller_front_send_response_before (see
+ * etc/frontend/events.xml and etc/webapi_rest/events.xml), so identity
+ * resolved by any observer earlier in the request, eg the add-to-cart or
+ * purchase marker, is flushed with the same response.
  */
 class IdentityFlushObserver implements ObserverInterface
 {

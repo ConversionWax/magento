@@ -18,12 +18,21 @@ use Psr\Log\LoggerInterface;
  * full-page cache never stores visitor cookies or claims. The side effect is the point: when consent
  * allows, the response carries Set-Cookie for _cws and _cwvs. The returned data holds only state, synced
  * and sid: no claims, no visitor id, no summary, no token.
+ *
+ * The browser loads this section once per page view with the page's path (cw_path) and, on a product
+ * page, its SKU (cw_product). Those become the page_view and product_view events, so views are counted
+ * even when the page itself came from Varnish, a CDN or the built-in full-page cache.
  */
 class Visitor implements SectionSourceInterface
 {
     // Magento_Customer's section endpoint. Its JSON result is always no-store, but it only applies that
     // header when it renders, after this section has run.
     private const SECTION_LOAD_ACTION = 'customer_section_load';
+    private const PATH_PARAM = 'cw_path';
+    private const PRODUCT_PARAM = 'cw_product';
+    private const MAX_PATH = 2048;
+    // Magento's sku column is varchar(64).
+    private const MAX_PRODUCT_ID = 64;
 
     public function __construct(
         private readonly Config $config,
@@ -49,7 +58,7 @@ class Visitor implements SectionSourceInterface
 
             // Consent is decided inside the sync service (ConsentResolverInterface, storage signal). Without
             // storage consent it clears stale cookies and returns 'denied' before anything else happens.
-            $result = $this->syncService->sync($storeId);
+            $result = $this->syncService->sync($storeId, $this->reportedView());
             if (($result['state'] ?? '') !== 'granted') {
                 // No consent: no claims, and the visitor context is not touched.
                 return ['state' => 'denied'];
@@ -70,6 +79,37 @@ class Visitor implements SectionSourceInterface
 
             return ['state' => 'error'];
         }
+    }
+
+    /**
+     * The page the browser reports, or null when this request reports none. Only read on the section
+     * endpoint: a server render of section data must never turn its own URL parameters into events.
+     *
+     * @return array{path:string,productId:string}|null
+     */
+    private function reportedView(): ?array
+    {
+        if ($this->request->getFullActionName() !== self::SECTION_LOAD_ACTION) {
+            return null;
+        }
+        $path = $this->request->getParam(self::PATH_PARAM);
+        if (!is_string($path)) {
+            return null;
+        }
+        // location.pathname never holds a query or fragment; drop any so none can reach the collector.
+        $path = explode('#', explode('?', $path, 2)[0], 2)[0];
+        if (!str_starts_with($path, '/') || str_starts_with($path, '//') || strlen($path) > self::MAX_PATH
+            || preg_match('/[\x00-\x1f\x7f]/', $path) === 1
+        ) {
+            return null;
+        }
+        $productId = $this->request->getParam(self::PRODUCT_PARAM);
+        $productId = is_string($productId) ? trim($productId) : '';
+        if (strlen($productId) > self::MAX_PRODUCT_ID || preg_match('/[\x00-\x1f\x7f]/', $productId) === 1) {
+            $productId = '';
+        }
+
+        return ['path' => $path, 'productId' => $productId];
     }
 
     /**

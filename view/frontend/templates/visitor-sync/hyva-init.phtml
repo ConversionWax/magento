@@ -4,6 +4,11 @@
  * only fetches sections once a private_content_version cookie exists, so a first-time anonymous visitor on
  * a cached page never loads cwax-visitor without this script. Static for every visitor of a store view.
  *
+ * It also reports each page view: once Hyva has dispatched its private content (so a full section reload of
+ * Hyva's own has finished), it loads the section with the page path and, on a product page, the SKU from
+ * product-view.phtml. A prerendered page waits until it is shown. A stored denial nothing has changed sends
+ * nothing, since the server would deny the view anyway.
+ *
  * @var \Magento\Framework\View\Element\Template $block
  * @var \Hyva\Theme\ViewModel\HyvaCsp $hyvaCsp
  */
@@ -22,6 +27,8 @@ var SECTION='cwax-visitor';
 var STORAGE='mage-cache-storage';
 var MARKER='cwax-visitor-inputs';
 var SESSION_SECONDS=1800;
+// Hyva dispatches private-content-loaded on every page; this only covers a page where it never does.
+var FALLBACK_MS=3000;
 var last=null;
 var cookieAllowed=function(){return /(?:^|; )user_allowed_save_cookie=[^;]/.test(d.cookie);};
 var gpc=function(){return !!(w.navigator&&w.navigator.globalPrivacyControl===true);};
@@ -52,23 +59,45 @@ return w.Date.now()/1000-(section.data_id||0)>SESSION_SECONDS;
 }
 return (expected?section.state!=='granted':section.state==='granted')&&inputsChanged();
 };
-var load=function(){
+var reportSent=false;
+var view=function(){
+var meta=d.querySelector('meta[name="cwax-product"]');
+var product=meta&&meta.getAttribute('content');
+var query='&cw_path='+encodeURIComponent(w.location.pathname);
+return product?query+'&cw_product='+encodeURIComponent(product):query;
+};
+var load=function(report){
 remember();
-return w.fetch(w.BASE_URL+'customer/section/load/?sections='+SECTION,{
+reportSent=reportSent||report;
+return w.fetch(w.BASE_URL+'customer/section/load/?sections='+SECTION+(report?view():''),{
 method:'GET',
 headers:{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'}
 }).then(function(response){return response.ok&&response.json();}).then(function(data){
+if(report&&!(data&&data[SECTION]&&data[SECTION].state==='granted')){reportSent=false;}
 if(!data||!data[SECTION]){return;}
 var all=JSON.parse(w.localStorage.getItem(STORAGE)||'{}')||{};
 all[SECTION]=data[SECTION];
 w.localStorage.setItem(STORAGE,JSON.stringify(all));
 publish();
-}).catch(function(){});
+}).catch(function(){if(report){reportSent=false;}});
+};
+var wantsReport=function(section){
+if(section&&(section.state==='off'||section.state==='error')){return false;}
+return needsLoad(section)||(!!section&&section.state==='granted');
+};
+var contentSeen=false;
+var timedOut=false;
+var begun=false;
+var begin=function(){
+if(begun||!(contentSeen||timedOut)||d.prerendering){return;}
+begun=true;
+if(!reportSent&&wantsReport(stored())){load(true);}
 };
 if(w.cw&&w.cw.__mgShim===true){last=w.cw.consentState();}
-w.addEventListener('private-content-loaded',function(){w.setTimeout(publish,0);});
-w.addEventListener('user-allowed-save-cookie',load);
-var start=function(){if(needsLoad(stored())){load();}};
+w.addEventListener('private-content-loaded',function(){w.setTimeout(function(){publish();contentSeen=true;begin();},0);});
+w.addEventListener('user-allowed-save-cookie',function(){load(!reportSent);});
+if(d.prerendering){d.addEventListener('prerenderingchange',begin);}
+var start=function(){w.setTimeout(function(){timedOut=true;begin();},FALLBACK_MS);};
 if(d.readyState==='loading'){d.addEventListener('DOMContentLoaded',start);}else{start();}
 })(window,document);
 JS;
