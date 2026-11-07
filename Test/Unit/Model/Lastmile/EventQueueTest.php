@@ -13,6 +13,7 @@ use Cwax\Banner\Model\Lastmile\VisitorContext;
 use Cwax\Banner\Model\Queue\MessagePublisher;
 use Magento\Framework\App\Request\Http;
 use Magento\Framework\App\RequestInterface;
+use Magento\Framework\Webapi\Rest\Request as RestRequest;
 use Magento\Store\Api\Data\StoreInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
@@ -81,7 +82,7 @@ class EventQueueTest extends TestCase
      * @param array<string, mixed> $attributes
      * @return array<string, mixed> the event that was published
      */
-    private function published(string $path, array $attributes = []): array
+    private function published(string $path, array $attributes = [], ?RequestInterface $request = null): array
     {
         $config = $this->createStub(Config::class);
         $config->method('isConfigured')->willReturn(true);
@@ -107,9 +108,7 @@ class EventQueueTest extends TestCase
             'hadPurchase' => false,
             'geo' => null,
         ]);
-        $request = $this->createStub(Http::class);
-        $request->method('getPathInfo')->willReturn($path);
-        $request->method('getServer')->willReturn(null);
+        $request ??= $this->storefrontRequest($path, $path);
         $message = null;
         $publisher = $this->createStub(MessagePublisher::class);
         $publisher->method('publishEvent')->willReturnCallback(
@@ -129,6 +128,41 @@ class EventQueueTest extends TestCase
         ))->enqueue('page_view', $attributes);
 
         return $message['payload']['events'][0];
+    }
+
+    private function storefrontRequest(string $pathInfo, string $originalPathInfo): Http
+    {
+        $request = $this->createStub(Http::class);
+        $request->method('getPathInfo')->willReturn($pathInfo);
+        $request->method('getOriginalPathInfo')->willReturn($originalPathInfo);
+        $request->method('getServer')->willReturn(null);
+        return $request;
+    }
+
+    public function testAProductPageReportsItsPublicUrlNotTheRewriteTarget(): void
+    {
+        // The URL rewrite router replaces the path info with the internal route.
+        $event = $this->published('', [], $this->storefrontRequest('/catalog/product/view/id/27', '/blue-shirt.html'));
+
+        $this->assertSame('/blue-shirt.html', $event['path']);
+    }
+
+    public function testAPageWithoutARewriteKeepsItsPath(): void
+    {
+        $event = $this->published('', [], $this->storefrontRequest('/checkout/cart/', '/checkout/cart/'));
+
+        $this->assertSame('/checkout/cart/', $event['path']);
+    }
+
+    public function testARestRequestStillMasksTheGuestCartId(): void
+    {
+        $request = $this->createStub(RestRequest::class);
+        $request->method('getPathInfo')->willReturn('/rest/default/V1/guest-carts/rIX3Jabc123/items');
+        $request->method('getServer')->willReturn(null);
+
+        $event = $this->published('', [], $request);
+
+        $this->assertSame('/rest/default/V1/guest-carts/-/items', $event['path']);
     }
 
     public function testAGuestCartIdNeverLeavesTheStoreInAnEventPath(): void

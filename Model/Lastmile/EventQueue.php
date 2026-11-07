@@ -8,13 +8,14 @@ use Cwax\Banner\Api\ConsentResolverInterface;
 use Cwax\Banner\Api\Data\ConsentDecisionInterface;
 use Cwax\Banner\Model\Config;
 use Cwax\Banner\Model\Queue\MessagePublisher;
+use Magento\Framework\App\Request\Http as HttpRequest;
 use Magento\Framework\App\RequestInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
 
 class EventQueue
 {
-    private const SDK_VERSION = 'magento-0.4.0';
+    private const SDK_VERSION = 'magento-0.4.1';
     private bool $sessionStartQueued = false;
     private ?ConsentDecisionInterface $consentDecision = null;
 
@@ -143,10 +144,27 @@ class EventQueue
      */
     private function eventPath(array $attributes): string
     {
+        if (is_string($attributes['path'] ?? null)) {
+            return $attributes['path'];
+        }
         // The guest cart mask id is a bearer credential for that cart.
-        return is_string($attributes['path'] ?? null)
-            ? $attributes['path']
-            : (string) preg_replace('#/guest-carts/[^/]+#', '/guest-carts/-', $this->request->getPathInfo());
+        return (string) preg_replace('#/guest-carts/[^/]+#', '/guest-carts/-', $this->requestPath());
+    }
+
+    /**
+     * The URL rewrite router replaces the path info with the internal route
+     * (/catalog/product/view/id/27), so storefront requests report the path the
+     * visitor actually requested (/blue-shirt.html). Neither includes the query.
+     */
+    private function requestPath(): string
+    {
+        if ($this->request instanceof HttpRequest) {
+            $original = (string) $this->request->getOriginalPathInfo();
+            if ($original !== '') {
+                return $original;
+            }
+        }
+        return (string) $this->request->getPathInfo();
     }
 
     /**

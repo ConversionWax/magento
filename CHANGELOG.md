@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+- Last Mile events now report the URL the visitor requested (for example `/blue-shirt.html`), not
+  the internal route the URL rewrite resolves to (`/catalog/product/view/id/27`). Pages without a
+  rewrite and REST calls are unchanged, and guest cart ids are still masked.
+- Tests now pin that each product page request sends one `product_view` and one `page_view`, that
+  a delivered message is never queued again, and that a retry keeps its event id.
+
 ## 0.4.0
 
 - The collector endpoint is no longer a merchant setting. A new Environment select (Production by

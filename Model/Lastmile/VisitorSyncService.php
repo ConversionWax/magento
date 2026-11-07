@@ -16,7 +16,7 @@ use Magento\Framework\HTTP\PhpEnvironment\RemoteAddress;
  */
 class VisitorSyncService
 {
-    private const SDK_VERSION = 'magento-0.4.0';
+    private const SDK_VERSION = 'magento-0.4.1';
 
     public function __construct(
         private readonly Config $config,

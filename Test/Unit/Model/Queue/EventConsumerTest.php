@@ -54,4 +54,60 @@ class EventConsumerTest extends TestCase
 
         $this->assertSame('https://shop.test/sale?utm_source=x', $posted['session']['entryUrl']);
     }
+
+    /** @return array{0: EventConsumer, 1: MessagePublisher&\PHPUnit\Framework\MockObject\MockObject} */
+    private function consumerAnswering(int $status): array
+    {
+        $config = $this->createStub(Config::class);
+        $config->method('isConfigured')->willReturn(true);
+        $config->method('getEventsUrl')->willReturn('https://collect.test/v1/integrations/events');
+        $config->method('getApiToken')->willReturn('token');
+        $curl = $this->createStub(Curl::class);
+        $curl->method('getStatus')->willReturn($status);
+        $curls = $this->createStub(CurlFactory::class);
+        $curls->method('create')->willReturn($curl);
+        $publisher = $this->createMock(MessagePublisher::class);
+
+        return [
+            new EventConsumer(
+                $config,
+                $publisher,
+                $curls,
+                $this->createStub(LoggerInterface::class),
+                new StoreUrl($this->createStub(StoreManagerInterface::class))
+            ),
+            $publisher,
+        ];
+    }
+
+    private function message(): string
+    {
+        return (string) json_encode([
+            'version' => 1,
+            'attempt' => 0,
+            'storeViewId' => 1,
+            'eventId' => 'e1',
+            'payload' => ['events' => [['eventId' => 'e1', 'type' => 'product_view']]],
+        ]);
+    }
+
+    public function testADeliveredEventIsNeverQueuedAgain(): void
+    {
+        [$consumer, $publisher] = $this->consumerAnswering(202);
+        $publisher->expects($this->never())->method('publishEvent');
+        $publisher->expects($this->never())->method('publishFailed');
+
+        $consumer->process($this->message());
+    }
+
+    public function testARetryKeepsTheEventIdSoTheCollectorCollapsesIt(): void
+    {
+        [$consumer, $publisher] = $this->consumerAnswering(503);
+        $publisher->expects($this->once())->method('publishEvent')->with($this->callback(
+            static fn (array $retry): bool => $retry['attempt'] === 1
+                && $retry['payload']['events'][0]['eventId'] === 'e1'
+        ));
+
+        $consumer->process($this->message());
+    }
 }
