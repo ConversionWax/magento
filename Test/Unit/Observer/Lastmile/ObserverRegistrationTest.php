@@ -4,18 +4,16 @@ declare(strict_types=1);
 
 namespace Cwax\Banner\Test\Unit\Observer\Lastmile;
 
-use Cwax\Banner\Observer\Lastmile\PageViewObserver;
-use Cwax\Banner\Observer\Lastmile\ProductViewObserver;
 use PHPUnit\Framework\TestCase;
 
 /**
- * A product page sends one product_view and one page_view. Registering either observer in a second
- * area or on a second event would send it twice for the same request.
+ * page_view and product_view come only from the browser's cwax-visitor section load, which reaches PHP
+ * even when the page came from a cache. A server observer for either would count an uncached view twice.
  */
 class ObserverRegistrationTest extends TestCase
 {
-    /** @return array<int, string> "events-file event" for every registration of the observer */
-    private function registrations(string $observerClass): array
+    /** @return array<int, string> every "events-file event observer-class" registration in the module */
+    private function registrations(): array
     {
         $root = dirname(__DIR__, 4);
         $found = [];
@@ -23,29 +21,21 @@ class ObserverRegistrationTest extends TestCase
             $xml = simplexml_load_file($file);
             $this->assertNotFalse($xml, $file);
             foreach ($xml->xpath('/config/event/observer') ?: [] as $observer) {
-                if (ltrim((string) $observer['instance'], '\\') === $observerClass) {
-                    $event = $observer->xpath('..')[0];
-                    $found[] = substr($file, strlen($root) + 1) . ' ' . $event['name'];
-                }
+                $event = $observer->xpath('..')[0];
+                $found[] = substr($file, strlen($root) + 1) . ' ' . $event['name'] . ' '
+                    . ltrim((string) $observer['instance'], '\\');
             }
         }
 
         return $found;
     }
 
-    public function testPageViewIsRegisteredOnceForStorefrontResponses(): void
+    public function testNoServerObserverReportsPageOrProductViews(): void
     {
-        $this->assertSame(
-            ['etc/frontend/events.xml controller_front_send_response_before'],
-            $this->registrations(PageViewObserver::class)
-        );
-    }
-
-    public function testProductViewIsRegisteredOnceForTheProductController(): void
-    {
-        $this->assertSame(
-            ['etc/frontend/events.xml catalog_controller_product_view'],
-            $this->registrations(ProductViewObserver::class)
-        );
+        $registrations = $this->registrations();
+        $this->assertNotEmpty($registrations);
+        foreach ($registrations as $registration) {
+            $this->assertDoesNotMatchRegularExpression('/PageView|ProductView|catalog_controller_product_view/', $registration);
+        }
     }
 }
