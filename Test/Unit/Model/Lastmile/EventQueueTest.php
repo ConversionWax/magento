@@ -130,12 +130,18 @@ class EventQueueTest extends TestCase
         return $message['payload']['events'][0];
     }
 
-    private function storefrontRequest(string $pathInfo, string $originalPathInfo): Http
+    /**
+     * @param array<string, string> $headers
+     */
+    private function storefrontRequest(string $pathInfo, string $originalPathInfo, array $headers = []): Http
     {
         $request = $this->createStub(Http::class);
         $request->method('getPathInfo')->willReturn($pathInfo);
         $request->method('getOriginalPathInfo')->willReturn($originalPathInfo);
         $request->method('getServer')->willReturn(null);
+        $request->method('getHeader')->willReturnCallback(
+            static fn (string $name): string|false => $headers[$name] ?? false
+        );
         return $request;
     }
 
@@ -177,5 +183,69 @@ class EventQueueTest extends TestCase
         $event = $this->published('/customer/section/load/', ['path' => '/sale']);
 
         $this->assertSame('/sale', $event['path']);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function speculativeRequests(): array
+    {
+        return [
+            'speculation rules prefetch' => ['Sec-Purpose', 'prefetch'],
+            'speculation rules prerender' => ['Sec-Purpose', 'prefetch;prerender'],
+            'legacy link prefetch' => ['Purpose', 'prefetch'],
+            'Safari preview' => ['X-Purpose', 'preview'],
+            'Firefox prefetch' => ['X-Moz', 'prefetch'],
+        ];
+    }
+
+    /**
+     * @dataProvider speculativeRequests
+     */
+    public function testASpeculativeLoadIsNotAVisit(string $header, string $value): void
+    {
+        $request = $this->storefrontRequest('/catalog/product/view/id/27', '/blue-shirt.html', [$header => $value]);
+        $context = $this->createMock(VisitorContext::class);
+        // No visitor cookie may be minted or extended by a page the shopper has not opened.
+        $context->expects($this->never())->method('get');
+        $publisher = $this->createMock(MessagePublisher::class);
+        $publisher->expects($this->never())->method('publishEvent');
+
+        $this->queueFor($request, $context, $publisher)->enqueue('product_view');
+    }
+
+    public function testAnUnrelatedPurposeHeaderStillCounts(): void
+    {
+        $event = $this->published('', [], $this->storefrontRequest('/sale', '/sale', ['Sec-Purpose' => 'other']));
+
+        $this->assertSame('/sale', $event['path']);
+    }
+
+    private function queueFor(
+        RequestInterface $request,
+        VisitorContext $context,
+        MessagePublisher $publisher
+    ): EventQueue {
+        $config = $this->createStub(Config::class);
+        $config->method('isConfigured')->willReturn(true);
+        $consent = $this->createStub(ConsentResolverInterface::class);
+        $consent->method('resolve')->willReturn(new ConsentDecision([
+            ConsentDecisionInterface::SIGNAL_STORAGE => true,
+            ConsentDecisionInterface::SIGNAL_MEASUREMENT => true,
+        ]));
+        $store = $this->createStub(StoreInterface::class);
+        $store->method('getId')->willReturn(1);
+        $stores = $this->createStub(StoreManagerInterface::class);
+        $stores->method('getStore')->willReturn($store);
+
+        return new EventQueue(
+            $config,
+            $context,
+            $publisher,
+            $stores,
+            $consent,
+            $request,
+            $this->createStub(LoggerInterface::class)
+        );
     }
 }

@@ -47,6 +47,12 @@ class EventQueue
     /** @param array<string, mixed> $attributes */
     private function enqueueInternal(string $type, array $attributes): void
     {
+        if ($this->isSpeculativeLoad()) {
+            // Checked before visitorContext->get() so a page the shopper has
+            // not opened neither reports a view nor touches their cookies.
+            return;
+        }
+
         $storeId = (int) $this->storeManager->getStore()->getId();
         if (!$this->config->isConfigured($storeId)) {
             return;
@@ -149,6 +155,29 @@ class EventQueue
         }
         // The guest cart mask id is a bearer credential for that cart.
         return (string) preg_replace('#/guest-carts/[^/]+#', '/guest-carts/-', $this->requestPath());
+    }
+
+    /**
+     * Browsers load pages before a click (Hyva's default speculation rules
+     * prefetch product links on hover, or on viewport on mobile). Those
+     * requests run the controller on a page cache miss, so without this every
+     * prefetched product reported a product_view and a page_view.
+     */
+    private function isSpeculativeLoad(): bool
+    {
+        if (!$this->request instanceof HttpRequest) {
+            return false;
+        }
+        foreach (['Sec-Purpose', 'Purpose', 'X-Purpose', 'X-Moz'] as $header) {
+            $value = strtolower((string) $this->request->getHeader($header));
+            if (str_contains($value, 'prefetch')
+                || str_contains($value, 'prerender')
+                || str_contains($value, 'preview')
+            ) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

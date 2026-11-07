@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Browser prefetch and prerender requests (`Sec-Purpose`, `Purpose`, `X-Purpose` or `X-Moz` with
+  prefetch, prerender or preview) no longer send Last Mile events or touch visitor cookies. Hyva
+  prefetches product links by default, so each prefetched product page reported a `product_view`
+  and a `page_view` the shopper never saw.
+
 ## 0.4.1
 
 - Last Mile events now report the URL the visitor requested (for example `/blue-shirt.html`), not
