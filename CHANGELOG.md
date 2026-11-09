@@ -2,24 +2,55 @@
 
 ## 0.5.0
 
-- `page_view` and `product_view` now come from the browser. On each page view the start-up script
-  loads the `cwax-visitor` section with the page path and, on a product page, the SKU, and Magento
-  queues both events from that request. Pages served by the built-in full-page cache, Varnish or a
-  CDN such as Cloudflare were invisible before: a cache hit never ran the product controller (no
-  `product_view`), and a CDN or Varnish hit never reached PHP (no `page_view` after the session
-  start). Works on Luma and Hyva.
+Breaking. Needs the Last Mile release with commit ec3b503 or later: the collector must serve
+`/v1/config/<integrationId>` for Magento installs with `serverCommerce: true` (an older collector
+answers 404, and `lm.js` then tracks nothing), and `lm.js` must support `['context', ...]` and
+`serverCommerce` (an older `lm.js` ignores the product context, so no `product_view` is sent, and
+could also pick up dataLayer commerce events).
+
+- `page_view` and `product_view` now come from the Last Mile browser snippet (`lm.js`), which the
+  module adds to the head of every storefront page on Luma and Hyva themes. Pages served by the
+  built-in full-page cache, Varnish or a CDN such as Cloudflare were invisible before: a cache hit
+  never ran the product controller (no `product_view`), and a CDN or Varnish hit never reached PHP
+  (no `page_view` after the session start). A page view now causes no request to Magento PHP.
+- A small inline script before the tag pushes the page's product
+  (`['context', { productId: '<sku>', pageType: 'product', platform: 'magento' }]`) and, with Cookie
+  Restriction Mode on, the cookie notice decision (`['consent', true|false]`, again on Allow) onto
+  the array form of `window.cw`. The module no longer installs a `window.cw` object or a
+  `consentState` shim of its own: `lm.js` provides `cw.consentState()` and the `cw:consent` event.
+- Cart, checkout, login and order events stay server events and read `lm.js`'s `_cwid` and `_cws`
+  (session id) cookies, so browser and server events join on visitor and session. Magento mints
+  `_cwid` and a session only on uncacheable commerce responses (add to cart, checkout, order
+  placement, login, registration) when consent is granted and `_cwid` is missing, and sends an
+  existing `_cwid` again on those responses so Safari's 7-day limit on script-written cookies does
+  not cut the visitor short. It never sets a cookie on a cacheable response.
 - The `PageViewObserver` and `ProductViewObserver` server observers are removed, so an uncached
-  page is not counted twice. Event paths for views are now the public URL including the store base
-  path (`/ocmlabs/seo.html`), the same as the session start already used.
-- A view report for the landing page within 3 seconds of its session start (for example right after
-  Hyva's own full section reload started the session) adds only its `product_view`, so the landing
-  page is counted once.
+  page is not counted twice.
 - Product pages render `<meta name="cwax-product" content="<sku>">` in the head. It is the same for
-  every visitor, so it is safe in the full-page cache.
+  every visitor, so it is safe in the full-page cache, and another front end can read it.
 - Browser prefetch and prerender requests (`Sec-Purpose`, `Purpose`, `X-Purpose` or `X-Moz` with
-  prefetch, prerender or preview) no longer send Last Mile events or touch visitor cookies. Hyva
-  prefetches product links by default, so each prefetched product page reported a `product_view`
-  and a `page_view` the shopper never saw.
+  prefetch, prerender or preview) no longer send Last Mile events or touch visitor cookies.
+- New setting: Integration ID (`conversionwax_lastmile/connection/integration_id`), from the
+  install's Embed code tab in ConversionWax, checked as a UUID at save time. Without it no `lm.js`
+  tag is added and no views are tracked.
+- Renamed setting: Enable Hyva Support (`connection/hyva_enabled`) is replaced by Load Last Mile on
+  Magento storefront (`connection/storefront_snippet`, default Yes), one switch for Luma and Hyva.
+  No means another front end runs its own `lm.js`; server commerce events are sent either way. A
+  data patch gives every store view on a Hyva theme (the theme or a parent under `Hyva/`) whose
+  effective Enable Hyva Support was No the new setting = No at its store-view scope, so it stays
+  off. Luma store views never read the old setting and now load `lm.js` by default. The old rows are
+  deleted.
+- Removed settings: Browser Snippet Installed (`consent/snippet_installed`) and Server-Only Fallback
+  Policy (`consent/fallback_policy`), and the Consent group. A consent mode that cannot be resolved
+  from ConversionWax now always denies server events (it was the Deny default before). The stored
+  values are deleted by the same data patch.
+- Retired: the `_cwms` cookie (lm.js's `_cws` is the only session cookie), the `cwax-visitor`
+  private-content section and its `customer/section/load` requests, the visitor-sync scripts (Luma
+  RequireJS component and Hyva start-up), the `_cwer` referrer cookie, and the server-side
+  `/v1/session` call that minted `_cws` and `_cwvs` from Magento (`lm.js` does that now). The buyer
+  claims (`hp`, `lp`) in `_cwvs` are no longer refreshed by Magento right after an order.
+- The tag sets `data-cwax-gpc="honor"`, so Global Privacy Control stops `lm.js` as it already
+  stopped server events.
 
 ## 0.4.1
 
