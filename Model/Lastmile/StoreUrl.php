@@ -7,7 +7,7 @@ namespace Cwax\Banner\Model\Lastmile;
 use Magento\Store\Model\StoreManagerInterface;
 
 /**
- * The _cwms cookie keeps the entry as a path plus attribution parameters. The collector needs an
+ * VisitorContext keeps the entry as a path plus attribution parameters. The collector needs an
  * absolute URL to classify it: a path alone fails new URL() and the session is labeled direct.
  */
 class StoreUrl

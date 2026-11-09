@@ -21,8 +21,6 @@ use Psr\Log\LoggerInterface;
 
 class EventQueueTest extends TestCase
 {
-    private const PURCHASE = ['orderId' => '1', 'value' => 5.0, 'currency' => 'USD'];
-
     private function queue(bool $configured, ?bool $storage, VisitorContext $context): EventQueue
     {
         $config = $this->createStub(Config::class);
@@ -46,36 +44,37 @@ class EventQueueTest extends TestCase
         );
     }
 
-    public function testMarkPurchasedDoesNotCreateCookiesWithoutStorageConsent(): void
+    public function testNoIdentityIsResolvedWithoutStorageConsent(): void
     {
         $context = $this->createMock(VisitorContext::class);
-        $context->expects($this->never())->method('markPurchased');
+        // get() may mint cookies, so it must not even run.
+        $context->expects($this->never())->method('get');
 
-        $this->queue(true, false, $context)->markPurchased(self::PURCHASE);
+        $this->queue(true, false, $context)->enqueue('add_to_cart', ['productId' => 'SKU']);
     }
 
-    public function testMarkPurchasedDoesNothingWhenConsentHasNoOpinion(): void
+    public function testNoIdentityIsResolvedWhenConsentHasNoOpinion(): void
     {
         $context = $this->createMock(VisitorContext::class);
-        $context->expects($this->never())->method('markPurchased');
+        $context->expects($this->never())->method('get');
 
-        $this->queue(true, null, $context)->markPurchased(self::PURCHASE);
+        $this->queue(true, null, $context)->enqueue('add_to_cart', ['productId' => 'SKU']);
     }
 
-    public function testMarkPurchasedDoesNothingWhenNotConfigured(): void
+    public function testNoIdentityIsResolvedWhenNotConfigured(): void
     {
         $context = $this->createMock(VisitorContext::class);
-        $context->expects($this->never())->method('markPurchased');
+        $context->expects($this->never())->method('get');
 
-        $this->queue(false, true, $context)->markPurchased(self::PURCHASE);
+        $this->queue(false, true, $context)->enqueue('add_to_cart', ['productId' => 'SKU']);
     }
 
-    public function testMarkPurchasedForwardsTheDetailsWhenAllowed(): void
+    public function testIdentityIsResolvedWithStorageConsent(): void
     {
         $context = $this->createMock(VisitorContext::class);
-        $context->expects($this->once())->method('markPurchased')->with(self::PURCHASE);
+        $context->expects($this->once())->method('get')->willReturn(null);
 
-        $this->queue(true, true, $context)->markPurchased(self::PURCHASE);
+        $this->queue(true, true, $context)->enqueue('add_to_cart', ['productId' => 'SKU']);
     }
 
     /**
@@ -125,7 +124,7 @@ class EventQueueTest extends TestCase
             $consent,
             $request,
             $this->createStub(LoggerInterface::class)
-        ))->enqueue('page_view', $attributes);
+        ))->enqueue('add_to_cart', $attributes);
 
         return $message['payload']['events'][0];
     }
@@ -180,7 +179,7 @@ class EventQueueTest extends TestCase
 
     public function testAnExplicitPathReplacesTheRequestPath(): void
     {
-        $event = $this->published('/customer/section/load/', ['path' => '/sale']);
+        $event = $this->published('/checkout/cart/add/', ['path' => '/sale']);
 
         $this->assertSame('/sale', $event['path']);
     }
@@ -211,7 +210,7 @@ class EventQueueTest extends TestCase
         $publisher = $this->createMock(MessagePublisher::class);
         $publisher->expects($this->never())->method('publishEvent');
 
-        $this->queueFor($request, $context, $publisher)->enqueue('product_view');
+        $this->queueFor($request, $context, $publisher)->enqueue('checkout_start');
     }
 
     public function testAnUnrelatedPurposeHeaderStillCounts(): void

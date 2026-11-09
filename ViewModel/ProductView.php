@@ -11,7 +11,8 @@ use Magento\Store\Model\StoreManagerInterface;
 
 /**
  * The SKU of the product page being rendered. The same for every visitor of the page (full-page cache), so
- * the browser can report the product_view with its section load.
+ * it is safe in cached HTML. lm.js reports the product_view with it (cw.push(['context', ...]), the same
+ * productId the server events use), and the cwax-product meta tag exposes it to any other front end.
  */
 class ProductView implements ArgumentInterface
 {

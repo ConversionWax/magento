@@ -1,0 +1,68 @@
+<?php
+/**
+ * Loads the Last Mile browser snippet (lm.js) on Luma and Hyva alike: plain JavaScript, no RequireJS,
+ * jQuery or Alpine needed. lm.js tracks page and product views and owns visitor identity. Magento adds
+ * only context, and keeps cart, checkout, login and order events server side.
+ *
+ * Static for every visitor of a page (full-page cache): the only server values are store settings and,
+ * on a product page, its SKU. No request goes to Magento from this script.
+ *
+ * The inline script runs first and only uses the array form of window.cw, which lm.js drains once it
+ * loads and then replaces with its live API:
+ *  - ['context', {productId: SKU, pageType: 'product', platform: 'magento'}] on a product page;
+ *  - ['consent', bool] with Magento's cookie notice decision, when Cookie Restriction Mode is on
+ *    (false until the visitor allows cookies), and ['consent', true] again once they do (Hyva's
+ *    user-allowed-save-cookie window event, Luma's user:allowed:save:cookie jQuery event). With
+ *    restriction off nothing is pushed and lm.js applies the install's own consent mode.
+ *
+ * @var \Magento\Framework\View\Element\Template $block
+ * @var \Magento\Framework\Escaper $escaper
+ * @var \Magento\Framework\View\Helper\SecureHtmlRenderer $secureRenderer
+ */
+declare(strict_types=1);
+
+/** @var \Cwax\Banner\ViewModel\LastmileSnippet $viewModel */
+$viewModel = $block->getData('view_model');
+if (!$viewModel->isEnabled()) {
+    return;
+}
+/** @var \Cwax\Banner\ViewModel\ProductView|null $productView set by layout/catalog_product_view.xml */
+$productView = $block->getData('product_view');
+$sku = $productView ? $productView->getSku() : '';
+$context = $sku === ''
+    ? 'null'
+    : json_encode(
+        ['productId' => $sku, 'pageType' => 'product', 'platform' => 'magento'],
+        JSON_THROW_ON_ERROR | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES
+    );
+
+$source = <<<'JS'
+(function(w,d){
+var restriction=__RESTRICTION__;
+var context=__CONTEXT__;
+// window.cw is the array until lm.js loads, then lm.js's live API; both have push().
+var push=function(command){w.cw=w.cw||[];w.cw.push(command);};
+var allowed=function(){return /(?:^|; )user_allowed_save_cookie=[^;]/.test(d.cookie);};
+if(context){push(['context',context]);}
+if(!restriction){return;}
+push(['consent',allowed()]);
+var granted=function(){push(['consent',true]);};
+w.addEventListener('user-allowed-save-cookie',granted);
+var luma=function(){
+if(typeof w.require!=='function'){return;}
+w.require(['jquery'],function($){$(d).on('user:allowed:save:cookie',granted);});
+};
+if(d.readyState==='loading'){d.addEventListener('DOMContentLoaded',luma);}else{luma();}
+})(window,document);
+JS;
+$script = strtr($source, [
+    '__RESTRICTION__' => $viewModel->respectsRestriction() ? 'true' : 'false',
+    '__CONTEXT__' => $context,
+]);
+?>
+<?= /* @noEscape */ $secureRenderer->renderTag('script', [], $script, false) ?>
+<script async
+        src="<?= $escaper->escapeUrl($viewModel->getSnippetUrl()) ?>"
+        data-cwax-site-id="<?= $escaper->escapeHtmlAttr($viewModel->getWebsiteId()) ?>"
+        data-cwax-integration-id="<?= $escaper->escapeHtmlAttr($viewModel->getIntegrationId()) ?>"
+        data-cwax-gpc="honor"></script>

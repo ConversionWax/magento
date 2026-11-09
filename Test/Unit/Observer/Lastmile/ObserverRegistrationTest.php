@@ -7,8 +7,8 @@ namespace Cwax\Banner\Test\Unit\Observer\Lastmile;
 use PHPUnit\Framework\TestCase;
 
 /**
- * page_view and product_view come only from the browser's cwax-visitor section load, which reaches PHP
- * even when the page came from a cache. A server observer for either would count an uncached view twice.
+ * page_view and product_view come only from lm.js in the browser, which runs even when the page came from
+ * a cache. A server observer for either would count an uncached view twice.
  */
 class ObserverRegistrationTest extends TestCase
 {

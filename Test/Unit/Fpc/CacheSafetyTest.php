@@ -8,7 +8,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Full-page cache stores HTML for all visitors. Anything that renders into HTML (templates, layout,
- * blocks, view models) must not read visitor cookies or claims. Only the AJAX section may.
+ * blocks, view models) must not read visitor cookies or claims. Only server commerce events read them.
  */
 class CacheSafetyTest extends TestCase
 {
@@ -57,25 +57,27 @@ class CacheSafetyTest extends TestCase
         $this->assertSame([], $violations);
     }
 
-    public function testTheTemplateIsStaticAndTheShimOnlyDefinesTheConsentApi(): void
+    public function testTheSnippetTemplateIsStaticAndNeverCallsMagento(): void
     {
-        $template = (string) file_get_contents(dirname(__DIR__, 3) . '/view/frontend/templates/visitor-sync.phtml');
+        $template = (string) file_get_contents(dirname(__DIR__, 3) . '/view/frontend/templates/lastmile.phtml');
 
-        $this->assertStringContainsString('window.cw.consentState', $template);
+        // Only the cookie notice's own allow cookie is read, in the browser.
         $this->assertStringContainsString('user_allowed_save_cookie', $template);
-        $this->assertStringContainsString('mage-cache-storage', $template);
-        $this->assertStringNotContainsString("'pending'", $template);
-        foreach (['_cwid', '_cws', '_cwvs', '_cwms'] as $name) {
-            $this->assertStringNotContainsString($name, $template);
+        foreach (['_cwid', '_cws', '_cwvs', '_cwms', '$_COOKIE', 'customer/section/load', 'cwax-visitor',
+            'fetch(', 'XMLHttpRequest', 'sendBeacon', '$.ajax'] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $template);
         }
-        $this->assertStringNotContainsString('$_COOKIE', $template);
     }
 
-    public function testTheSectionIsRegisteredAsPrivateContent(): void
+    public function testNoPrivateContentSectionIsRegistered(): void
     {
-        $di = (string) file_get_contents(dirname(__DIR__, 3) . '/etc/frontend/di.xml');
+        $root = dirname(__DIR__, 3);
 
-        $this->assertStringContainsString('name="cwax-visitor"', $di);
-        $this->assertStringContainsString('SectionPoolInterface', $di);
+        $this->assertFileDoesNotExist($root . '/etc/frontend/sections.xml');
+        $this->assertFileDoesNotExist($root . '/CustomerData/Visitor.php');
+        foreach (glob($root . '/etc{,/*}/*.xml', GLOB_BRACE) ?: [] as $file) {
+            $this->assertStringNotContainsString('SectionPoolInterface', (string) file_get_contents($file), $file);
+            $this->assertStringNotContainsString('cwax-visitor', (string) file_get_contents($file), $file);
+        }
     }
 }

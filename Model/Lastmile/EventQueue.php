@@ -49,7 +49,7 @@ class EventQueue
     {
         if ($this->isSpeculativeLoad()) {
             // Checked before visitorContext->get() so a page the shopper has
-            // not opened neither reports a view nor touches their cookies.
+            // not opened neither reports an event nor touches their cookies.
             return;
         }
 
@@ -159,9 +159,9 @@ class EventQueue
 
     /**
      * Browsers load pages before a click (Hyva's default speculation rules
-     * prefetch product links on hover, or on viewport on mobile). Those
-     * requests run the controller on a page cache miss, so without this every
-     * prefetched product reported a product_view and a page_view.
+     * prefetch links on hover, or on viewport on mobile). Those requests run
+     * the controller on a page cache miss, so without this a prefetched
+     * checkout link reported a checkout_start the shopper never made.
      */
     private function isSpeculativeLoad(): bool
     {
@@ -262,25 +262,5 @@ class EventQueue
 
         $remoteAddr = (string) $this->request->getServer('REMOTE_ADDR');
         return $remoteAddr !== '' ? substr($remoteAddr, 0, 64) : null;
-    }
-
-    /**
-     * @param array{orderId?:string,value?:float|int,currency?:string} $purchase
-     */
-    public function markPurchased(array $purchase = []): void
-    {
-        try {
-            $storeId = (int) $this->storeManager->getStore()->getId();
-            if (!$this->config->isConfigured($storeId)
-                || !$this->resolveConsent($storeId)->isStorageGranted()
-            ) {
-                return;
-            }
-            $this->visitorContext->markPurchased($purchase);
-        } catch (\Throwable $exception) {
-            $this->logger->warning('ConversionWax Last Mile could not update purchase context.', [
-                'exception' => $exception,
-            ]);
-        }
     }
 }

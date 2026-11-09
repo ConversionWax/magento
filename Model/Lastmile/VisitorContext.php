@@ -6,26 +6,35 @@ namespace Cwax\Banner\Model\Lastmile;
 
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\App\Response\Http as ResponseHttp;
+use Magento\Framework\HTTP\PhpEnvironment\Request as PhpRequest;
 use Magento\Framework\Stdlib\Cookie\CookieMetadataFactory;
 use Magento\Framework\Stdlib\CookieManagerInterface;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Visitor and session identity for server commerce events (add to cart, checkout, purchase, identify).
+ *
+ * lm.js owns identity on the storefront: it mints `_cwid` and its session cookie `_cws` (cookie contract
+ * C1), and this class reads them. Magento mints only when `_cwid` (or a live session) is missing, which
+ * happens when lm.js is blocked or another front end runs it, and only on a response that is KNOWN to be
+ * uncacheable. A Magento-minted `_cws` carries the "mg" key, so the module keeps that session alive itself
+ * and never rewrites a session lm.js owns.
+ */
 class VisitorContext
 {
     private const VISITOR_COOKIE = '_cwid';
-    private const SESSION_COOKIE = '_cwms';
-    // Browser-side cookies (lastmile packages/snippet/src/cookies.ts): read
-    // only, never written here.
-    private const BROWSER_SESSION_COOKIE = '_cws';
+    // lm.js's session cookie (lastmile packages/snippet/src/cookies.ts CWS), the only session cookie.
+    private const SESSION_COOKIE = '_cws';
     private const SUMMARY_COOKIE = '_cwvs';
-    // Short-lived cookie the consent shim writes on an external arrival. Cached pages never reach PHP,
-    // so only the browser knows document.referrer. Read only, never written here.
-    private const ENTRY_REFERRER_COOKIE = '_cwer';
-    private const SECTION_LOAD_PATH = '/customer/section/load';
+    // Marks a _cws that Magento minted. Extra keys are allowed by the cookie contract and lm.js keeps them.
+    private const SERVER_SESSION_KEY = 'mg';
     private const COOKIE_DURATION = 34560000;
     private const SESSION_IDLE_MS = 1800000;
     private const NUMBER_CAP = 1000000;
-    private const PENDING_PURCHASE_MAX_AGE_MS = 2592000000; // 30 days
+    // Full-page cache, Varnish and CDNs never store a response to these. Anything else (GET, HEAD, or an
+    // unknown method) is judged by its Cache-Control header instead.
+    private const UNCACHEABLE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
+    private const MAX_COOKIE_LENGTH = 4096;
 
     // Query params kept on entryUrl: standard UTM parameters plus the click
     // ids the collector's own attribution classifier recognizes (lastmile
@@ -40,6 +49,8 @@ class VisitorContext
     private ?array $context = null;
     private bool $unresolved = false;
     private ?bool $cacheable = null;
+    /** @var array<string, mixed>|null the _cws value to write, only for a session Magento owns */
+    private ?array $serverSession = null;
     /** @var string|null what the last persist() wrote, so a repeat flush() sends no duplicate Set-Cookie */
     private ?string $persisted = null;
 
@@ -60,6 +71,9 @@ class VisitorContext
      * must not enqueue an event in that case rather than report a phantom
      * new visitor.
      *
+     * Callers must have storage consent before calling this; VisitorContext
+     * itself holds no consent opinion.
+     *
      * @return array{
      *   visitorId:string,
      *   sessionId:string,
@@ -70,7 +84,6 @@ class VisitorContext
      *   isNew:bool,
      *   number:int,
      *   hadPurchase:bool,
-     *   pendingPurchase:?array{orderId:string,value:float,currency:string,ts:int},
      *   geo:?string
      * }|null
      */
@@ -99,84 +112,49 @@ class VisitorContext
             $visitorId = $this->uuid();
         }
 
-        $previous = $this->decodeState(
-            (string) $this->cookieManager->getCookie(self::SESSION_COOKIE),
-            $visitorId
-        );
-        $browserSession = $this->decodeBrowserSession();
-        $claims = $this->decodeSummaryClaims();
-        $browserSid = $browserSession['sid'] ?? null;
-
-        if ($browserSid !== null) {
-            // The store also runs the browser snippet: adopt its live
-            // session id so server and browser events join on session_id,
-            // rather than minting a competing one of our own.
-            $isNew = $previous === null || $previous['sessionId'] !== $browserSid;
-            $sessionId = $browserSid;
-        } else {
-            $isNew = $previous === null
-                || $now < $previous['lastActivityAt']
-                || ($now - $previous['lastActivityAt']) > self::SESSION_IDLE_MS;
-            if ($isNew && $cacheable !== false && $previous !== null) {
-                // No browser session to adopt, and cacheability is known
-                // true or still unknown: a mint of our own might not survive
-                // this response, so keep the stale session going rather than
-                // fabricate an id that could never persist.
-                $isNew = false;
-            }
-            $sessionId = $isNew
-                ? ($cacheable !== false ? null : $this->uuid())
-                : $previous['sessionId'];
-        }
-
-        if ($sessionId === null) {
+        $session = $this->decodeSession();
+        $isNew = false;
+        if ($session !== null && !isset($session[self::SERVER_SESSION_KEY])) {
+            // lm.js owns this session and rolls it over itself: adopt it so
+            // server and browser events join on session_id, and never write it.
+            $sessionId = $session['sid'];
+        } elseif ($session !== null && $this->isLive($session, $now)) {
+            // Magento's own session (lm.js is not running): keep it alive.
+            $sessionId = $session['sid'];
+            $this->serverSession = ['la' => $now] + $session;
+        } elseif ($cacheable !== false) {
+            // A mint of our own might not survive this response.
             $this->unresolved = true;
             return null;
-        }
-
-        if ($isNew) {
-            $entry = $this->resolveEntry();
-            $state = [
-                'visitorId' => $visitorId,
-                'sessionId' => $sessionId,
-                'startedAt' => $now,
-                'lastActivityAt' => $now,
-                'entryUrl' => $entry['url'],
-                'entryReferrer' => $entry['referrer'],
-                'number' => $claims['number']
-                    ?? min($previous === null ? 1 : $previous['number'] + 1, self::NUMBER_CAP),
-                'hadPurchase' => $claims['hadPurchase'] ?? ($previous['hadPurchase'] ?? false),
-                'pendingPurchase' => $previous['pendingPurchase'] ?? null,
-            ];
         } else {
-            // Only reachable once $previous has already been established
-            // above; the null-coalesced literal is a defensive fallback.
-            $entry = $this->resolveEntry();
-            $state = $previous ?? [
-                'visitorId' => $visitorId,
-                'sessionId' => $sessionId,
-                'startedAt' => $now,
-                'lastActivityAt' => $now,
-                'entryUrl' => $entry['url'],
-                'entryReferrer' => $entry['referrer'],
-                'number' => $claims['number'] ?? 1,
-                'hadPurchase' => $claims['hadPurchase'] ?? false,
-                'pendingPurchase' => null,
+            $sessionId = $this->uuid();
+            $isNew = true;
+            // Cookie contract C1 shape. st === la marks a freshly minted session.
+            $this->serverSession = [
+                'sid' => $sessionId,
+                'st' => $now,
+                'la' => $now,
+                'pv' => 0,
+                'src' => 'direct',
+                'med' => 'direct',
+                self::SERVER_SESSION_KEY => 1,
             ];
-            $state['sessionId'] = $sessionId;
-            $state['lastActivityAt'] = $now;
-            if ($claims['number'] !== null) {
-                $state['number'] = $claims['number'];
-            }
-            if ($claims['hadPurchase'] !== null) {
-                $state['hadPurchase'] = $state['hadPurchase'] || $claims['hadPurchase'];
-            }
         }
 
+        $startedAt = !$isNew && is_int($session['st'] ?? null) && $session['st'] <= $now ? $session['st'] : $now;
+        $claims = $this->decodeSummaryClaims();
+        $entry = $this->resolveEntry();
         $this->context = [
-            ...$state,
+            'visitorId' => $visitorId,
+            'sessionId' => $sessionId,
+            'startedAt' => $startedAt,
+            'lastActivityAt' => $now,
+            'entryUrl' => $entry['url'],
+            'entryReferrer' => $entry['referrer'],
             'isNew' => $isNew,
-            'geo' => $browserSession['geo'] ?? null,
+            'number' => $claims['number'] ?? 1,
+            'hadPurchase' => $claims['hadPurchase'] ?? false,
+            'geo' => is_string($session['geo'] ?? null) ? substr($session['geo'], 0, 64) : null,
         ];
 
         // Cookie writing is deferred to flush(), called at
@@ -189,95 +167,25 @@ class VisitorContext
     }
 
     /**
-     * Callers must have storage consent before calling this (or clearPendingPurchase()),
-     * exactly as for get(); VisitorContext itself holds no consent opinion.
-     *
-     * @param array{orderId?:string,value?:float|int,currency?:string} $purchase
+     * For a GET commerce request that is never cacheable (the checkout page): sends the no-cache headers
+     * now, so get() may mint, and the final response agrees. Call it before get().
      */
-    public function markPurchased(array $purchase = []): void
+    public function declareUncacheable(): void
     {
-        if ($this->get() === null) {
-            return;
-        }
-        $this->context['hadPurchase'] = true;
-        $pending = $this->normalizePurchase($purchase);
-        if ($pending !== null) {
-            $this->context['pendingPurchase'] = $pending;
-        }
-        // Persisting is deferred to flush(); see the note in get().
-    }
-
-    public function clearPendingPurchase(): void
-    {
-        if ($this->get() === null) {
-            return;
-        }
-        $this->context['pendingPurchase'] = null;
-        // Persisting is deferred to flush(); see the note in get().
-    }
-
-    /**
-     * @param array<string, mixed> $purchase
-     * @return array{orderId:string,value:float,currency:string,ts:int}|null
-     */
-    private function normalizePurchase(array $purchase): ?array
-    {
-        $orderId = $purchase['orderId'] ?? null;
-        $value = $purchase['value'] ?? null;
-        $currency = $purchase['currency'] ?? null;
-        if (!is_string($orderId) || $orderId === '' || strlen($orderId) > 64
-            || !(is_int($value) || is_float($value)) || !is_finite((float) $value)
-            || !is_string($currency) || preg_match('/^[A-Za-z]{3}$/', $currency) !== 1
-        ) {
-            return null;
-        }
-
-        return [
-            'orderId' => $orderId,
-            'value' => (float) $value,
-            'currency' => strtoupper($currency),
-            'ts' => (int) round(microtime(true) * 1000),
-        ];
-    }
-
-    /**
-     * @return array{orderId:string,value:float,currency:string,ts:int}|null
-     */
-    private function decodePurchase(mixed $raw): ?array
-    {
-        if (!is_array($raw)
-            || !is_string($raw['o'] ?? null) || $raw['o'] === '' || strlen($raw['o']) > 64
-            || !(is_int($raw['v'] ?? null) || is_float($raw['v'] ?? null))
-            || !is_finite((float) $raw['v'])
-            || !is_string($raw['c'] ?? null) || preg_match('/^[A-Za-z]{3}$/', $raw['c']) !== 1
-            || !is_int($raw['t'] ?? null)
-        ) {
-            return null;
-        }
-        $ageMs = (int) round(microtime(true) * 1000) - $raw['t'];
-        if ($ageMs > self::PENDING_PURCHASE_MAX_AGE_MS || $ageMs < -60000) {
-            return null;
-        }
-
-        return [
-            'orderId' => $raw['o'],
-            'value' => (float) $raw['v'],
-            'currency' => strtoupper($raw['c']),
-            'ts' => $raw['t'],
-        ];
+        $this->response->setNoCacheHeaders();
+        $this->cacheable = false;
+        $this->unresolved = false;
     }
 
     /**
      * Writes the identity cookies, if any identity was resolved this request
      * and the response has turned out to be genuinely uncacheable. Called
-     * late, at controller_front_send_response_before (and by the cwax-visitor
-     * section, which has declared its response uncacheable); a repeat call
-     * with unchanged state writes nothing. The late call runs after
-     * Magento's page cache plugin has finalized the Cache-Control header -
-     * calling isCacheableResponse() directly here rather than through the
-     * memoized resolveCacheable() so a stale reading from an earlier,
-     * premature call during the request cannot suppress a real cacheability
-     * check now.
+     * late, at controller_front_send_response_before; a repeat call with
+     * unchanged state writes nothing. The late call runs after Magento's
+     * page cache plugin has finalized the Cache-Control header - calling
+     * isCacheableResponse() directly here rather than through the memoized
+     * resolveCacheable() so a stale reading from an earlier, premature call
+     * during the request cannot suppress a real cacheability check now.
      *
      * get() and resolveCacheable() treat a null (undetermined) result the
      * same as cacheable=true (do not mint); flush() deliberately treats null
@@ -289,6 +197,10 @@ class VisitorContext
      * mark the response cacheable; if no Cache-Control header exists even at
      * that point, the response was never going to be cached, so null there
      * means the same as a decided false.
+     *
+     * `_cwid` is written again even when it came from the browser: Safari
+     * caps a cookie written by script (lm.js) at 7 days, or 24 hours after a
+     * tracked link, but not one set by an HTTP response.
      */
     public function flush(): void
     {
@@ -307,11 +219,11 @@ class VisitorContext
     }
 
     /**
-     * Memoizes isCacheableResponse() for get(), which may be called more
-     * than once per request. Deliberately does not use a separate "resolved"
-     * flag: while the Cache-Control header is still unset, isCacheableResponse()
-     * returns null and this re-evaluates on every call instead of locking in
-     * that null as though it were a decided answer. Only a real true/false
+     * Memoizes the cacheability get() works from. A POST, PUT or DELETE
+     * (add to cart, login, order placement) is never stored by any cache,
+     * so it is known false at once. For GET and HEAD it re-evaluates while
+     * the Cache-Control header is still unset (null), instead of locking in
+     * that null as though it were a decided answer; only a real true/false
      * result ever sticks. flush() never calls this method - it calls
      * isCacheableResponse() directly so a null memoized here early cannot
      * suppress its live, late check.
@@ -319,16 +231,25 @@ class VisitorContext
     private function resolveCacheable(): ?bool
     {
         if ($this->cacheable === null) {
-            $this->cacheable = $this->isCacheableResponse();
+            $this->cacheable = $this->isCacheableMethod() ? $this->isCacheableResponse() : false;
         }
         return $this->cacheable;
+    }
+
+    private function isCacheableMethod(): bool
+    {
+        if (!$this->request instanceof PhpRequest) {
+            return true;
+        }
+
+        return !in_array(strtoupper((string) $this->request->getMethod()), self::UNCACHEABLE_METHODS, true);
     }
 
     /**
      * Detects cacheability from the response's own Cache-Control header
      * rather than guessing by route: Magento's full page cache subsystem has
      * already finalized this header by controller_front_send_response_before,
-     * the point at which the page-view observer runs. Before that point the
+     * the point at which flush() runs. Before that point the
      * header frequently does not exist yet at all; that is genuinely
      * undetermined, not decided-uncacheable, so it is reported as null
      * rather than false.
@@ -370,36 +291,22 @@ class VisitorContext
         }
 
         try {
-            $encoded = $this->encodeState($this->context);
-            $signature = $this->context['visitorId'] . '|' . $encoded;
+            $session = $this->serverSession === null
+                ? ''
+                : json_encode($this->serverSession, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            $signature = $this->context['visitorId'] . '|' . $session;
             if ($signature === $this->persisted) {
                 return;
             }
-            $visitorMetadata = $this->cookieMetadataFactory->createPublicCookieMetadata()
-                ->setDuration(self::COOKIE_DURATION)
-                ->setPath('/')
-                ->setSecure(true)
-                ->setHttpOnly(false)
-                ->setSameSite('Lax');
             $this->cookieManager->setPublicCookie(
                 self::VISITOR_COOKIE,
                 (string) $this->context['visitorId'],
-                $visitorMetadata
+                $this->metadata()->setDuration(self::COOKIE_DURATION)
             );
-
-            // _cwms is a session cookie: no Duration is set, so no
-            // Max-Age/Expires attribute is sent, matching the contract's
-            // session-cookie treatment of the browser's own _cws.
-            $sessionMetadata = $this->cookieMetadataFactory->createPublicCookieMetadata()
-                ->setPath('/')
-                ->setSecure(true)
-                ->setHttpOnly(false)
-                ->setSameSite('Lax');
-            $this->cookieManager->setPublicCookie(
-                self::SESSION_COOKIE,
-                $encoded,
-                $sessionMetadata
-            );
+            if ($session !== '') {
+                // A session cookie, like lm.js's own _cws: no Max-Age/Expires.
+                $this->cookieManager->setPublicCookie(self::SESSION_COOKIE, $session, $this->metadata());
+            }
             $this->persisted = $signature;
         } catch (\Throwable $exception) {
             $this->logger->warning('ConversionWax Last Mile could not persist visitor context.', [
@@ -408,114 +315,30 @@ class VisitorContext
         }
     }
 
-    /** @param array<string, mixed> $state */
-    private function encodeState(array $state): string
-    {
-        $payload = [
-            'vid' => $state['visitorId'],
-            'sid' => $state['sessionId'],
-            'st' => $state['startedAt'],
-            'la' => $state['lastActivityAt'],
-            'url' => $state['entryUrl'],
-            'ref' => $state['entryReferrer'],
-            'n' => $state['number'],
-            'hp' => $state['hadPurchase'] ? 1 : 0,
-        ];
-        if (($state['pendingPurchase'] ?? null) !== null) {
-            // Only what the collector needs: no email, no customer id.
-            $payload['pp'] = [
-                'o' => $state['pendingPurchase']['orderId'],
-                'v' => $state['pendingPurchase']['value'],
-                'c' => $state['pendingPurchase']['currency'],
-                't' => $state['pendingPurchase']['ts'],
-            ];
-        }
-        $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-
-        return rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
-    }
-
     /**
-     * @return array{
-     *   visitorId:string,
-     *   sessionId:string,
-     *   startedAt:int,
-     *   lastActivityAt:int,
-     *   entryUrl:string,
-     *   entryReferrer:?string,
-     *   number:int,
-     *   hadPurchase:bool,
-     *   pendingPurchase:?array{orderId:string,value:float,currency:string,ts:int}
-     * }|null
-     */
-    private function decodeState(string $encoded, string $visitorId): ?array
-    {
-        if ($encoded === '' || strlen($encoded) > 4096) {
-            return null;
-        }
-
-        try {
-            $padded = strtr($encoded, '-_', '+/');
-            $padded .= str_repeat('=', (4 - strlen($padded) % 4) % 4);
-            $decoded = base64_decode($padded, true);
-            if ($decoded === false) {
-                return null;
-            }
-            $state = json_decode($decoded, true, 16, JSON_THROW_ON_ERROR);
-            if (!is_array($state)
-                || ($state['vid'] ?? null) !== $visitorId
-                || !$this->isUuid((string) ($state['sid'] ?? ''))
-                || !is_int($state['st'] ?? null)
-                || !is_int($state['la'] ?? null)
-                || !is_string($state['url'] ?? null)
-                || !is_int($state['n'] ?? null)
-                || $state['n'] < 1
-            ) {
-                return null;
-            }
-
-            // _cwms is not HttpOnly, so a compromised page or rogue browser
-            // extension could rewrite it with an attacker-chosen entryUrl
-            // before the next request. Validate the host before sanitizing -
-            // sanitizeEntryUrl() normalizes away scheme/host entirely, so it
-            // must run after the store-host check, not before it, or a
-            // different-host URL would slip through by having its host
-            // silently stripped instead of being rejected.
-            $rawUrl = substr($state['url'], 0, 2048);
-            if (!$this->isStoreUrl($rawUrl)) {
-                return null;
-            }
-            $url = $this->sanitizeEntryUrl($rawUrl);
-
-            $ref = $this->cleanReferrer($state['ref'] ?? null);
-
-            return [
-                'visitorId' => $visitorId,
-                'sessionId' => $state['sid'],
-                'startedAt' => $state['st'],
-                'lastActivityAt' => $state['la'],
-                'entryUrl' => $url,
-                'entryReferrer' => $ref,
-                'number' => min($state['n'], self::NUMBER_CAP),
-                'hadPurchase' => ($state['hp'] ?? 0) === 1,
-                'pendingPurchase' => $this->decodePurchase($state['pp'] ?? null),
-            ];
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
-    /**
-     * Reads the browser snippet's session cookie (cookies.ts CWS). Session
-     * count / has-purchased come from _cwvs claims separately; only sid and
-     * the cached geo string are read here.
+     * Cookie contract C1 attributes: Path=/, SameSite=Lax, Secure, readable by lm.js and the embed.
      *
-     * @return array{sid: string, geo: ?string}|null
+     * @return \Magento\Framework\Stdlib\Cookie\PublicCookieMetadata
      */
-    private function decodeBrowserSession(): ?array
+    private function metadata()
     {
-        $raw = (string) $this->cookieManager->getCookie(self::BROWSER_SESSION_COOKIE);
-        if ($raw === '' || strlen($raw) > 4096) {
+        return $this->cookieMetadataFactory->createPublicCookieMetadata()
+            ->setPath('/')
+            ->setSecure(true)
+            ->setHttpOnly(false)
+            ->setSameSite('Lax');
+    }
+
+    /**
+     * Reads _cws, written by lm.js (URI-encoded JSON) or by this class. Every key is kept, so a session
+     * Magento keeps alive loses nothing lm.js may have added to it.
+     *
+     * @return array<string, mixed>|null with a UUID sid, or null
+     */
+    private function decodeSession(): ?array
+    {
+        $raw = (string) $this->cookieManager->getCookie(self::SESSION_COOKIE);
+        if ($raw === '' || strlen($raw) > self::MAX_COOKIE_LENGTH) {
             return null;
         }
 
@@ -528,9 +351,15 @@ class VisitorContext
             return null;
         }
 
-        $geo = is_string($decoded['geo'] ?? null) ? substr($decoded['geo'], 0, 64) : null;
+        return $decoded;
+    }
 
-        return ['sid' => $decoded['sid'], 'geo' => $geo];
+    /** @param array<string, mixed> $session */
+    private function isLive(array $session, int $now): bool
+    {
+        $lastActivity = $session['la'] ?? null;
+
+        return is_int($lastActivity) && $now >= $lastActivity && $now - $lastActivity <= self::SESSION_IDLE_MS;
     }
 
     /**
@@ -576,30 +405,23 @@ class VisitorContext
     }
 
     /**
-     * Under a full-page cache the cwax-visitor section is the first request PHP sees, so its own URL is
-     * never the entry: the page the visitor landed on is its same-host Referer, and an external referrer
-     * is only known to the browser.
+     * The entry of a session Magento mints. That only happens on a commerce request (an add to cart POST,
+     * the checkout page, a REST order call), so the page the visitor was on is its same-host Referer.
+     * Without one the request itself is the entry and any other Referer is the session's referrer.
      *
      * @return array{url:string,referrer:?string}
      */
     private function resolveEntry(): array
     {
-        $uri = $this->request->getUriString();
         $referer = $this->request->getServer('HTTP_REFERER');
-        if (!str_contains((string) parse_url($uri, PHP_URL_PATH), self::SECTION_LOAD_PATH)) {
-            return ['url' => $this->sanitizeEntryUrl($uri), 'referrer' => $this->cleanReferrer($referer)];
+        $page = is_string($referer) ? substr($referer, 0, 2048) : '';
+        if ($this->isAbsoluteHttpUrl($page) && $this->isStoreUrl($page)) {
+            return ['url' => $this->sanitizeEntryUrl($page), 'referrer' => null];
         }
 
-        $landing = is_string($referer) ? substr($referer, 0, 2048) : '';
-        $browserReferrer = $this->cookieManager->getCookie(self::ENTRY_REFERRER_COOKIE);
-
         return [
-            'url' => $this->isAbsoluteHttpUrl($landing) && $this->isStoreUrl($landing)
-                ? $this->sanitizeEntryUrl($landing)
-                : '/',
-            'referrer' => $this->cleanReferrer(
-                is_string($browserReferrer) ? rawurldecode($browserReferrer) : null
-            ),
+            'url' => $this->sanitizeEntryUrl((string) $this->request->getUriString()),
+            'referrer' => $this->cleanReferrer($referer),
         ];
     }
 
@@ -632,10 +454,11 @@ class VisitorContext
             // the first '?' as a conservative fallback so no query data
             // leaks through unfiltered.
             $bare = explode('?', $uriString, 2)[0];
-            return substr($bare, 0, 2048);
+            return substr((string) preg_replace('#/guest-carts/[^/]+#', '/guest-carts/-', $bare), 0, 2048);
         }
 
-        $path = $parts['path'] ?? '/';
+        // The guest cart mask id is a bearer credential for that cart.
+        $path = (string) preg_replace('#/guest-carts/[^/]+#', '/guest-carts/-', $parts['path'] ?? '/');
         $query = '';
         if (isset($parts['query']) && $parts['query'] !== '') {
             parse_str($parts['query'], $params);

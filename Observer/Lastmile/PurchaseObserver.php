@@ -50,29 +50,19 @@ class PurchaseObserver implements ObserverInterface
         if (!is_array($orders) || $orders === []) {
             $orders = [$observer->getEvent()->getOrder()];
         }
-        $purchase = null;
         foreach ($orders as $order) {
-            $enqueued = $this->enqueueOrder($order);
-            if ($enqueued !== null) {
-                $purchase = $enqueued;
-            }
-        }
-        if ($purchase !== null) {
-            $this->eventQueue->markPurchased($purchase);
+            $this->enqueueOrder($order);
         }
     }
 
-    /**
-     * @return array{orderId:string,value:float,currency:string}|null
-     */
-    private function enqueueOrder(mixed $order): ?array
+    private function enqueueOrder(mixed $order): void
     {
         if (!is_object($order) || !method_exists($order, 'getIncrementId')) {
-            return null;
+            return;
         }
         $orderId = (string) $order->getIncrementId();
         if ($orderId === '') {
-            return null;
+            return;
         }
 
         $email = method_exists($order, 'getCustomerEmail') ? (string) $order->getCustomerEmail() : '';
@@ -94,10 +84,5 @@ class PurchaseObserver implements ObserverInterface
         }
 
         $this->eventQueue->enqueue('purchase', $attributes);
-        return [
-            'orderId' => $orderId,
-            'value' => $attributes['value'],
-            'currency' => $attributes['currency'],
-        ];
     }
 }

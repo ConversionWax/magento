@@ -7,14 +7,13 @@ namespace Cwax\Banner\Model\Consent;
 use Cwax\Banner\Api\ConsentResolverInterface;
 use Cwax\Banner\Api\Data\ConsentDecisionInterface;
 use Cwax\Banner\Api\StoreConfigProviderInterface;
-use Cwax\Banner\Model\Config;
 use Magento\Framework\Stdlib\CookieManagerInterface;
 
 class SnippetIdentityConsentResolver implements ConsentResolverInterface
 {
     /**
      * Must match Cwax\Banner\Model\Lastmile\VisitorContext::BROWSER_SESSION_COOKIE.
-     * This is the browser snippet's own true session cookie (no Max-Age -
+     * This is lm.js's own true session cookie (no Max-Age -
      * conversionwax_lastmile packages/snippet/src/cookies.ts CWS), not
      * _cwid/_cwvs. Those two persist 400 days and are minted by the same
      * call as this one (session.ts ensureIdentity()), so their presence
@@ -29,8 +28,7 @@ class SnippetIdentityConsentResolver implements ConsentResolverInterface
 
     public function __construct(
         private readonly StoreConfigProviderInterface $storeConfigProvider,
-        private readonly CookieManagerInterface $cookieManager,
-        private readonly Config $config
+        private readonly CookieManagerInterface $cookieManager
     ) {
     }
 
@@ -39,23 +37,12 @@ class SnippetIdentityConsentResolver implements ConsentResolverInterface
         $mode = $this->storeConfigProvider->getConsentMode($storeId);
         if ($mode !== StoreConfigProviderInterface::CONSENT_MODE_WAIT_FOR_CONSENT) {
             // capture_immediately: no snippet-derived gate. Unresolved mode:
-            // handled entirely by ModeConsentResolver's fallback.
-            return new ConsentDecision([]);
-        }
-
-        if (!$this->config->isSnippetInstalled($storeId)) {
-            // No browser snippet runs on this store: the _cws cookie this
-            // resolver looks for can never appear, so this signal must not
-            // vote at all. ModeConsentResolver's fallback policy (grant,
-            // magento_cookie, or deny) is the sole voice for this store.
+            // ModeConsentResolver denies on its own.
             return new ConsentDecision([]);
         }
 
         $raw = (string) $this->cookieManager->getCookie(self::BROWSER_SESSION_COOKIE);
-        // Cheap shape check only (URL-encoded JSON object) - this resolver
-        // does not need to parse session fields, only detect presence of a
-        // plausible, non-empty value.
-        $granted = $raw !== '' && str_starts_with(rawurldecode($raw), '{');
+        $granted = $this->isSnippetSession($raw);
 
         return new ConsentDecision(
             [
@@ -64,5 +51,27 @@ class SnippetIdentityConsentResolver implements ConsentResolverInterface
             ],
             $granted ? [] : [self::DENIAL_REASON]
         );
+    }
+
+    /**
+     * A URL-encoded JSON object with a session id, written by lm.js. A session Magento minted itself (the
+     * "mg" key, see VisitorContext) is not evidence of consent: the server only mints after consent was
+     * already established some other way, so it must not grant on its own echo.
+     */
+    private function isSnippetSession(string $raw): bool
+    {
+        if ($raw === '' || strlen($raw) > 4096) {
+            return false;
+        }
+        try {
+            $decoded = json_decode(rawurldecode($raw), true, 8, JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return is_array($decoded)
+            && is_string($decoded['sid'] ?? null)
+            && $decoded['sid'] !== ''
+            && !isset($decoded['mg']);
     }
 }

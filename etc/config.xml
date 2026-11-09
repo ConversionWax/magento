@@ -5,13 +5,9 @@
         <conversionwax_lastmile>
             <connection>
                 <enabled>0</enabled>
-                <hyva_enabled>1</hyva_enabled>
+                <storefront_snippet>1</storefront_snippet>
                 <environment>production</environment>
             </connection>
-            <consent>
-                <snippet_installed>1</snippet_installed>
-                <fallback_policy>deny</fallback_policy>
-            </consent>
         </conversionwax_lastmile>
     </default>
 </config>

@@ -15,8 +15,10 @@ use Psr\Log\LoggerInterface;
  *
  * Registered on controller_front_send_response_before (see
  * etc/frontend/events.xml and etc/webapi_rest/events.xml), so identity
- * resolved by any observer earlier in the request, eg the add-to-cart or
- * purchase marker, is flushed with the same response.
+ * resolved by any commerce observer earlier in the request (add to cart,
+ * checkout start, purchase, identify) is flushed with the same response:
+ * a `_cwid` Magento minted, a refresh of the one lm.js wrote, and a `_cws`
+ * Magento owns. A request that resolved no identity writes nothing.
  */
 class IdentityFlushObserver implements ObserverInterface
 {

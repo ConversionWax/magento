@@ -1,7 +1,7 @@
 <?php
 /**
- * Static for every visitor of a product page. The visitor-sync start-up reads it and reports the
- * product_view with the cwax-visitor section load.
+ * Static for every visitor of a product page. The SKU is the productId of the page's product_view; the
+ * module's own lm.js block pushes it as context, and a front end that loads its own lm.js can read it here.
  *
  * @var \Magento\Framework\View\Element\Template $block
  * @var \Magento\Framework\Escaper $escaper
