@@ -52,29 +52,32 @@ A page served from Magento's built-in full-page cache, Varnish, Fastly, Cloudfla
 never runs the product controller, and a CDN hit never reaches PHP at all, so a server observer
 cannot see those views. The module therefore adds the Last Mile browser snippet (`lm.js`) to every
 storefront page, on Luma and Hyva themes alike, and `lm.js` sends `page_view` and `product_view`
-straight to the ConversionWax collector. A page view costs no request to Magento PHP: the tag and
-its small inline script are the same for every visitor, so they are safe in any HTML cache.
+straight to the ConversionWax collector. A page view costs no request to Magento PHP: the inline
+script that loads it is the same for every visitor, so it is safe in any HTML cache.
 
-The tag goes in the page head:
+The module renders one inline script in the page head and no static `lm.js` tag. The script
+queues on the array form of `window.cw`, which `lm.js` drains when it loads and then replaces with
+its live API, and then injects the tag itself (appended to `document.head`):
 
 ```html
-<script>/* queue: window.cw = window.cw || []; cw.push([...]) */</script>
 <script async src="https://assets.conversionwax.com/lastmile/v1/lm.js"
         data-cwax-site-id="WEBSITE_ID" data-cwax-integration-id="INTEGRATION_ID"
         data-cwax-gpc="honor"></script>
 ```
 
-The inline script runs first and only ever uses the array form of `window.cw`, which `lm.js`
-drains when it loads and then replaces with its live API:
+- On a product page it first queues `['context', { productId: '<SKU>', pageType: 'product',
+  platform: 'magento' }]`. The SKU is the same `productId` the server commerce events use. The
+  product page also keeps `<meta name="cwax-product" content="<SKU>">` for any other front end.
+- Magento Cookie Restriction Mode off: the tag is injected at once and `lm.js` applies the install's
+  own consent mode.
+- Restriction on and cookies already allowed (`user_allowed_save_cookie`): it queues
+  `['consent', true]` and injects the tag at once.
+- Restriction on and not allowed yet: nothing more. `lm.js` is not loaded, so it sets no cookie and
+  calls no collector, whatever the install's consent mode. When the visitor clicks Allow (Hyva's
+  `user-allowed-save-cookie` window event, Luma's `user:allowed:save:cookie` jQuery event) it queues
+  `['consent', true]` and injects the tag, once, without a page load.
 
-- On a product page: `cw.push(['context', { productId: '<SKU>', pageType: 'product', platform:
-  'magento' }])`. The SKU is the same `productId` the server commerce events use. The product page
-  also keeps `<meta name="cwax-product" content="<SKU>">` for any other front end.
-- With Magento Cookie Restriction Mode on: `cw.push(['consent', false])` until the visitor allows
-  cookies and `cw.push(['consent', true])` once they have. Clicking Allow pushes
-  `['consent', true]` at once (Hyva's `user-allowed-save-cookie` window event, Luma's
-  `user:allowed:save:cookie` jQuery event), without a page load. With restriction off nothing is
-  pushed, and `lm.js` applies the install's own consent mode.
+`lm.js` finds the injected tag through `document.currentScript` (or `script[data-cwax-site-id]`).
 
 The collector serves Magento installs a config with `serverCommerce: true` and no commerce
 patterns, so `lm.js` sends views, `identify` and `track` only. Cart, checkout, login and order
@@ -158,8 +161,8 @@ Magento storefronts map to different ConversionWax websites.
 In the browser, `lm.js` decides. Its `window.cw.consentState()` returns `'granted'`, `'denied'` or
 `'pending'` (`pending` under `wait_for_consent` before any decision), and `window` dispatches
 `cw:consent` with `{ detail: { state } }` on every change; `granted` is dispatched only once the
-cookies exist. Before `lm.js` has loaded, `window.cw` is the plain array queue and has no
-`consentState`; readers fall back to cookie presence. The ConversionWax banner embed reads these.
+cookies exist. Before `lm.js` has loaded (or, under restriction, before Allow), `window.cw` is the
+plain array queue and has no `consentState`; readers fall back to cookie presence. The ConversionWax banner embed reads these.
 
 **A store using a third-party CMP (OneTrust, Cookiebot, etc.) under `wait_for_consent` must wire that
 CMP to call `cw.consent(true)` (and `cw.consent(false)` on decline)**, or push
@@ -167,9 +170,9 @@ CMP to call `cw.consent(true)` (and `cw.consent(false)` on decline)**, or push
 own cookie notice. A CMP that never calls `cw.consent()` leaves every visitor `pending`: no views,
 no `_cws`, and no server events (see below).
 
-**With Magento Cookie Restriction Mode on, set the install's consent mode to Wait for consent in
-ConversionWax.** Under Capture immediately, `lm.js` starts capture (cookies and the session start)
-before it reads the queued `['consent', false]`, and only then stops and deletes the cookies.
+**With Magento Cookie Restriction Mode on, `lm.js` is only loaded once the visitor has allowed
+cookies** (see "Views come from lm.js"), so under either consent mode nothing runs in the browser
+before that decision. A visitor who never clicks Allow is not tracked at all.
 
 On the server, a composite of small resolvers (`Cwax\Banner\Api\ConsentResolverInterface`, wired in
 `etc/di.xml`) decides whether a server commerce event may be sent. Each resolver either abstains,

@@ -6,13 +6,12 @@ namespace Cwax\Banner\Test\Unit\Fpc;
 
 use Cwax\Banner\ViewModel\LastmileSnippet;
 use Cwax\Banner\ViewModel\ProductView;
-use Magento\Framework\Escaper;
 use Magento\Framework\View\Element\Template;
 use Magento\Framework\View\Helper\SecureHtmlRenderer;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Renders view/frontend/templates/lastmile.phtml the way Magento would, with the template's three variables.
+ * Renders view/frontend/templates/lastmile.phtml the way Magento would, with the template's variables.
  */
 class LastmileTemplateTest extends TestCase
 {
@@ -36,15 +35,12 @@ class LastmileTemplateTest extends TestCase
         $block->method('getData')->willReturnCallback(
             static fn (string $key) => ['view_model' => $viewModel, 'product_view' => $productView][$key] ?? null
         );
-        $escaper = $this->createStub(Escaper::class);
-        $escaper->method('escapeUrl')->willReturnCallback(static fn (string $v): string => htmlspecialchars($v));
-        $escaper->method('escapeHtmlAttr')->willReturnCallback(static fn (string $v): string => htmlspecialchars($v));
         $secureRenderer = $this->createStub(SecureHtmlRenderer::class);
         $secureRenderer->method('renderTag')->willReturnCallback(
             static fn (string $tag, array $attributes, string $content): string => "<$tag>$content</$tag>"
         );
 
-        $render = static function (string $file) use ($block, $escaper, $secureRenderer): string {
+        $render = static function (string $file) use ($block, $secureRenderer): string {
             ob_start();
             include $file;
             return (string) ob_get_clean();
@@ -58,27 +54,25 @@ class LastmileTemplateTest extends TestCase
         $this->assertSame('', trim($this->render(false)));
     }
 
-    public function testTheQueueScriptComesBeforeTheLmJsTag(): void
+    public function testOnlyTheInlineScriptIsRenderedAndNoStaticLmJsTag(): void
     {
         $html = $this->render();
 
-        $queue = strpos($html, '<script>(function(w,d){');
-        $tag = strpos($html, '<script async');
-        $this->assertNotFalse($queue);
-        $this->assertNotFalse($tag);
-        $this->assertLessThan($tag, $queue);
-        $this->assertSame(2, substr_count($html, '<script'));
+        $this->assertSame(1, substr_count($html, '<script'));
+        $this->assertStringStartsWith('<script>(function(w,d){', trim($html));
+        $this->assertDoesNotMatchRegularExpression('/<script[^>]*\ssrc=/', $html);
     }
 
-    public function testTheTagCarriesTheSiteAndIntegrationIds(): void
+    public function testTheTagValuesArePassedAsJson(): void
     {
         $html = $this->render();
 
-        $this->assertStringContainsString('src="https://assets.conversionwax.com/lastmile/v1/lm.js"', $html);
-        $this->assertStringContainsString('data-cwax-site-id="' . self::WEBSITE_ID . '"', $html);
-        $this->assertStringContainsString('data-cwax-integration-id="' . self::INTEGRATION_ID . '"', $html);
-        $this->assertStringContainsString('data-cwax-gpc="honor"', $html);
-        $this->assertMatchesRegularExpression('/<script async\s/', $html);
+        $this->assertStringContainsString(
+            'var tag={"src":"https://assets.conversionwax.com/lastmile/v1/lm.js","siteId":"' . self::WEBSITE_ID
+                . '","integrationId":"' . self::INTEGRATION_ID . '"};',
+            $html
+        );
+        $this->assertStringContainsString("'data-cwax-gpc','honor'", $html);
     }
 
     public function testTheStoreSettingsAreFilledIn(): void
@@ -103,7 +97,7 @@ class LastmileTemplateTest extends TestCase
     {
         $html = $this->render(sku: '</script><script>alert(1)</script>\'"&');
 
-        $this->assertSame(2, substr_count($html, '</script>'));
+        $this->assertSame(1, substr_count($html, '</script>'));
         $this->assertStringContainsString('\u003C/script\u003E', $html);
     }
 }

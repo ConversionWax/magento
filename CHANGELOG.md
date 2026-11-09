@@ -9,15 +9,17 @@ answers 404, and `lm.js` then tracks nothing), and `lm.js` must support `['conte
 could also pick up dataLayer commerce events).
 
 - `page_view` and `product_view` now come from the Last Mile browser snippet (`lm.js`), which the
-  module adds to the head of every storefront page on Luma and Hyva themes. Pages served by the
+  module loads on every storefront page on Luma and Hyva themes. Pages served by the
   built-in full-page cache, Varnish or a CDN such as Cloudflare were invisible before: a cache hit
   never ran the product controller (no `product_view`), and a CDN or Varnish hit never reached PHP
   (no `page_view` after the session start). A page view now causes no request to Magento PHP.
-- A small inline script before the tag pushes the page's product
-  (`['context', { productId: '<sku>', pageType: 'product', platform: 'magento' }]`) and, with Cookie
-  Restriction Mode on, the cookie notice decision (`['consent', true|false]`, again on Allow) onto
-  the array form of `window.cw`. The module no longer installs a `window.cw` object or a
-  `consentState` shim of its own: `lm.js` provides `cw.consentState()` and the `cw:consent` event.
+- There is no static `lm.js` tag: a small inline script queues the page's product
+  (`['context', { productId: '<sku>', pageType: 'product', platform: 'magento' }]`) on the array
+  form of `window.cw` and then injects the tag. With Cookie Restriction Mode on, it waits for the
+  visitor's Allow (or an existing allow cookie), queues `['consent', true]` and only then injects
+  the tag, once, so `lm.js` sets no cookie and calls no collector before consent, whatever the
+  install's consent mode. The module no longer installs a `window.cw` object or a `consentState`
+  shim of its own: `lm.js` provides `cw.consentState()` and the `cw:consent` event.
 - Cart, checkout, login and order events stay server events and read `lm.js`'s `_cwid` and `_cws`
   (session id) cookies, so browser and server events join on visitor and session. Magento mints
   `_cwid` and a session only on uncacheable commerce responses (add to cart, checkout, order
