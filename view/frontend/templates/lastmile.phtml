@@ -1,0 +1,89 @@
+<?php
+/**
+ * Loads the Last Mile browser snippet (lm.js) on Luma and Hyva alike: plain JavaScript, no RequireJS,
+ * jQuery or Alpine needed. lm.js tracks page and product views and owns visitor identity. Magento adds
+ * only context, and keeps cart, checkout, login and order events server side.
+ *
+ * Static for every visitor of a page (full-page cache): the only server values are store settings and,
+ * on a product page, its SKU. No request goes to Magento from this script.
+ *
+ * There is no static lm.js tag. The inline script queues on the array form of window.cw (which lm.js
+ * drains once it loads) and then injects the tag itself:
+ *  - ['context', {productId: SKU, pageType: 'product', platform: 'magento'}] on a product page, always
+ *    queued first;
+ *  - Cookie Restriction Mode off: the tag is injected at once and lm.js applies the install's own
+ *    consent mode;
+ *  - restriction on and cookies already allowed: ['consent', true] is queued and the tag injected;
+ *  - restriction on and not allowed yet: nothing more. lm.js is not loaded at all, so it sets no cookie
+ *    and calls no collector, whatever the install's consent mode. Allowing cookies (Hyva's
+ *    user-allowed-save-cookie window event, Luma's user:allowed:save:cookie jQuery event) queues
+ *    ['consent', true] and injects the tag, once.
+ *
+ * @var \Magento\Framework\View\Element\Template $block
+ * @var \Magento\Framework\View\Helper\SecureHtmlRenderer $secureRenderer
+ */
+declare(strict_types=1);
+
+/** @var \Cwax\Banner\ViewModel\LastmileSnippet $viewModel */
+$viewModel = $block->getData('view_model');
+if (!$viewModel->isEnabled()) {
+    return;
+}
+/** @var \Cwax\Banner\ViewModel\ProductView|null $productView set by layout/catalog_product_view.xml */
+$productView = $block->getData('product_view');
+$sku = $productView ? $productView->getSku() : '';
+$jsonFlags = JSON_THROW_ON_ERROR | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+    | JSON_UNESCAPED_SLASHES;
+$context = $sku === ''
+    ? 'null'
+    : json_encode(['productId' => $sku, 'pageType' => 'product', 'platform' => 'magento'], $jsonFlags);
+$tag = json_encode([
+    'src' => $viewModel->getSnippetUrl(),
+    'siteId' => $viewModel->getWebsiteId(),
+    'integrationId' => $viewModel->getIntegrationId(),
+], $jsonFlags);
+
+$source = <<<'JS'
+(function(w,d){
+var restriction=__RESTRICTION__;
+var context=__CONTEXT__;
+var tag=__TAG__;
+// window.cw is the array until lm.js loads, then lm.js's live API; both have push().
+var push=function(command){w.cw=w.cw||[];w.cw.push(command);};
+var allowed=function(){return /(?:^|; )user_allowed_save_cookie=[^;]/.test(d.cookie);};
+var injected=false;
+// lm.js finds this element through document.currentScript (or script[data-cwax-site-id]).
+var inject=function(){
+if(injected){return;}
+injected=true;
+var s=d.createElement('script');
+s.async=true;
+s.src=tag.src;
+s.setAttribute('data-cwax-site-id',tag.siteId);
+s.setAttribute('data-cwax-integration-id',tag.integrationId);
+s.setAttribute('data-cwax-gpc','honor');
+d.head.appendChild(s);
+};
+if(context){push(['context',context]);}
+if(!restriction){inject();return;}
+if(allowed()){push(['consent',true]);inject();return;}
+var granted=function(){
+if(injected){return;}
+push(['consent',true]);
+inject();
+};
+w.addEventListener('user-allowed-save-cookie',granted);
+var luma=function(){
+if(typeof w.require!=='function'){return;}
+w.require(['jquery'],function($){$(d).on('user:allowed:save:cookie',granted);});
+};
+if(d.readyState==='loading'){d.addEventListener('DOMContentLoaded',luma);}else{luma();}
+})(window,document);
+JS;
+$script = strtr($source, [
+    '__RESTRICTION__' => $viewModel->respectsRestriction() ? 'true' : 'false',
+    '__CONTEXT__' => $context,
+    '__TAG__' => $tag,
+]);
+?>
+<?= /* @noEscape */ $secureRenderer->renderTag('script', [], $script, false) ?>

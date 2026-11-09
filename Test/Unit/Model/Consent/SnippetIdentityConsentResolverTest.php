@@ -6,7 +6,6 @@ namespace Cwax\Banner\Test\Unit\Model\Consent;
 
 use Cwax\Banner\Api\Data\ConsentDecisionInterface;
 use Cwax\Banner\Api\StoreConfigProviderInterface;
-use Cwax\Banner\Model\Config;
 use Cwax\Banner\Model\Consent\SnippetIdentityConsentResolver;
 use Magento\Framework\Stdlib\CookieManagerInterface;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -28,22 +27,15 @@ class SnippetIdentityConsentResolverTest extends TestCase
     /** @var CookieManagerInterface&MockObject */
     private CookieManagerInterface $cookieManager;
 
-    /** @var Config&MockObject */
-    private Config $config;
-
     protected function setUp(): void
     {
         $this->storeConfigProvider = $this->createMock(StoreConfigProviderInterface::class);
         $this->cookieManager = $this->createMock(CookieManagerInterface::class);
-        $this->config = $this->createMock(Config::class);
-        // Every existing test in this file exercises the cookie-based logic,
-        // which only applies to stores that actually run the snippet.
-        $this->config->method('isSnippetInstalled')->willReturn(true);
     }
 
     private function makeResolver(): SnippetIdentityConsentResolver
     {
-        return new SnippetIdentityConsentResolver($this->storeConfigProvider, $this->cookieManager, $this->config);
+        return new SnippetIdentityConsentResolver($this->storeConfigProvider, $this->cookieManager);
     }
 
     /**
@@ -142,13 +134,13 @@ class SnippetIdentityConsentResolverTest extends TestCase
     }
 
     /**
-     * A raw (non-URL-encoded) JSON object value grants both signals.
+     * A raw (non-URL-encoded) JSON session with a sid grants both signals.
      */
     public function testWaitForConsentRawJsonCookieGrants(): void
     {
         $this->storeConfigProvider->method('getConsentMode')
             ->willReturn(StoreConfigProviderInterface::CONSENT_MODE_WAIT_FOR_CONSENT);
-        $this->cookieManager->method('getCookie')->willReturn('{"v":1}');
+        $this->cookieManager->method('getCookie')->willReturn('{"sid":"abc","la":1}');
 
         $decision = $this->makeResolver()->resolve(self::STORE_ID);
 
@@ -165,7 +157,7 @@ class SnippetIdentityConsentResolverTest extends TestCase
     {
         $this->storeConfigProvider->method('getConsentMode')
             ->willReturn(StoreConfigProviderInterface::CONSENT_MODE_WAIT_FOR_CONSENT);
-        $this->cookieManager->method('getCookie')->willReturn(rawurlencode('{"v":1,"geo":"US"}'));
+        $this->cookieManager->method('getCookie')->willReturn(rawurlencode('{"sid":"abc","geo":"US"}'));
 
         $decision = $this->makeResolver()->resolve(self::STORE_ID);
 
@@ -205,24 +197,30 @@ class SnippetIdentityConsentResolverTest extends TestCase
     }
 
     /**
-     * wait_for_consent with no snippet installed on the store: the _cws
-     * cookie can never appear, so this resolver must abstain entirely and
-     * let ModeConsentResolver's fallback policy decide - not read the
-     * cookie and deny, which would make the admin's fallback policy an
-     * unreachable no-op.
+     * A JSON object without a session id is not an lm.js session.
      */
-    public function testWaitForConsentNoSnippetInstalledAbstainsAndNeverReadsCookie(): void
+    public function testWaitForConsentJsonWithoutASessionIdDenies(): void
     {
         $this->storeConfigProvider->method('getConsentMode')
             ->willReturn(StoreConfigProviderInterface::CONSENT_MODE_WAIT_FOR_CONSENT);
-        $this->config = $this->createMock(Config::class);
-        $this->config->method('isSnippetInstalled')->willReturn(false);
-        $this->cookieManager->expects($this->never())->method('getCookie');
+        $this->cookieManager->method('getCookie')->willReturn(rawurlencode('{"v":1}'));
+
+        $this->assertFalse($this->makeResolver()->resolve(self::STORE_ID)->isStorageGranted());
+    }
+
+    /**
+     * A session Magento minted itself ("mg") is never evidence that the
+     * visitor consented in the browser.
+     */
+    public function testWaitForConsentMagentoMintedSessionDenies(): void
+    {
+        $this->storeConfigProvider->method('getConsentMode')
+            ->willReturn(StoreConfigProviderInterface::CONSENT_MODE_WAIT_FOR_CONSENT);
+        $this->cookieManager->method('getCookie')->willReturn(rawurlencode('{"sid":"abc","mg":1}'));
 
         $decision = $this->makeResolver()->resolve(self::STORE_ID);
 
-        $this->assertNull($decision->getSignal(ConsentDecisionInterface::SIGNAL_STORAGE));
-        $this->assertNull($decision->getSignal(ConsentDecisionInterface::SIGNAL_MEASUREMENT));
-        $this->assertSame([], $decision->getDenialReasons());
+        $this->assertFalse($decision->isStorageGranted());
+        $this->assertSame(['no_snippet_consent_signal'], $decision->getDenialReasons());
     }
 }

@@ -10,8 +10,9 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The purchase marker is set wherever an order is placed (PurchaseObserver is global), so the identity
- * flush must run in every area that places Luma orders, or the marker is lost with the request.
+ * Commerce events resolve identity wherever they run (PurchaseObserver is global), so the identity flush
+ * must run in every area that adds to cart or places Luma orders, or a minted or refreshed _cwid is lost
+ * with the request.
  */
 class IdentityFlushRegistrationTest extends TestCase
 {

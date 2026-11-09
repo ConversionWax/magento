@@ -1,0 +1,18 @@
+<?php
+/**
+ * Static for every visitor of a product page. The SKU is the productId of the page's product_view; the
+ * module's own lm.js block pushes it as context, and a front end that loads its own lm.js can read it here.
+ *
+ * @var \Magento\Framework\View\Element\Template $block
+ * @var \Magento\Framework\Escaper $escaper
+ */
+declare(strict_types=1);
+
+/** @var \Cwax\Banner\ViewModel\ProductView $viewModel */
+$viewModel = $block->getData('view_model');
+$sku = $viewModel->getSku();
+if ($sku === '') {
+    return;
+}
+?>
+<meta name="cwax-product" content="<?= $escaper->escapeHtmlAttr($sku) ?>">

@@ -4,21 +4,14 @@
         <script src="https://assets.conversionwax.com/dist/app.js" src_type="url" defer="defer" />
     </head>
     <body>
+        <!-- One template for Luma and Hyva: plain JavaScript, so no hyva_ layout handle is needed. -->
         <referenceContainer name="head.additional">
             <block class="Magento\Framework\View\Element\Template"
-                   name="cwax.visitor.sync"
-                   template="Cwax_Banner::visitor-sync.phtml">
+                   name="cwax.lastmile"
+                   template="Cwax_Banner::lastmile.phtml">
                 <arguments>
-                    <argument name="view_model" xsi:type="object">Cwax\Banner\ViewModel\VisitorSync</argument>
+                    <argument name="view_model" xsi:type="object">Cwax\Banner\ViewModel\LastmileSnippet</argument>
                 </arguments>
-                <!-- Separate template so a theme compat module can replace the RequireJS start-up. -->
-                <block class="Magento\Framework\View\Element\Template"
-                       name="cwax.visitor.sync.init"
-                       template="Cwax_Banner::visitor-sync/init.phtml">
-                    <arguments>
-                        <argument name="view_model" xsi:type="object">Cwax\Banner\ViewModel\VisitorSync</argument>
-                    </arguments>
-                </block>
             </block>
         </referenceContainer>
     </body>
