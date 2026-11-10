@@ -5,10 +5,6 @@
         <observer name="conversionwax_lastmile_identity_flush"
                   instance="Cwax\Banner\Observer\Lastmile\IdentityFlushObserver"/>
     </event>
-    <event name="controller_action_predispatch_checkout_index_index">
-        <observer name="conversionwax_lastmile_checkout_start"
-                  instance="Cwax\Banner\Observer\Lastmile\CheckoutStartObserver"/>
-    </event>
     <event name="customer_login">
         <observer name="conversionwax_lastmile_customer_login"
                   instance="Cwax\Banner\Observer\Lastmile\IdentifyObserver"/>
