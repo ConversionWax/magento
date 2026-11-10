@@ -26,7 +26,8 @@ class EventQueue
         private readonly StoreManagerInterface $storeManager,
         private readonly ConsentResolverInterface $consentResolver,
         private readonly RequestInterface $request,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        private readonly StoreUrl $storeUrl
     ) {
     }
 
@@ -183,17 +184,18 @@ class EventQueue
     /**
      * The URL rewrite router replaces the path info with the internal route
      * (/catalog/product/view/id/27), so storefront requests report the path the
-     * visitor actually requested (/blue-shirt.html). Neither includes the query.
+     * visitor actually requested (/blue-shirt.html). Neither includes the query. Path info excludes the
+     * store base path (/ocmlabs), so it is added back to match the URL the visitor sees.
      */
     private function requestPath(): string
     {
         if ($this->request instanceof HttpRequest) {
             $original = (string) $this->request->getOriginalPathInfo();
             if ($original !== '') {
-                return $original;
+                return $this->storeUrl->basePath() . $original;
             }
         }
-        return (string) $this->request->getPathInfo();
+        return $this->storeUrl->basePath() . $this->request->getPathInfo();
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cwax\Banner\Observer\Lastmile;
 
 use Cwax\Banner\Model\Lastmile\EventQueue;
+use Cwax\Banner\Model\Lastmile\StoreUrl;
 use Magento\Framework\App\State;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
@@ -15,7 +16,8 @@ class AddToCartObserver implements ObserverInterface
     public function __construct(
         private readonly EventQueue $eventQueue,
         private readonly State $appState,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        private readonly StoreUrl $storeUrl
     ) {
     }
 
@@ -71,6 +73,12 @@ class AddToCartObserver implements ObserverInterface
             $attributes['value'] = (float) $item->getRowTotal();
         } elseif (method_exists($item, 'getQty') && method_exists($item, 'getPrice')) {
             $attributes['value'] = (float) $item->getQty() * (float) $item->getPrice();
+        }
+
+        // The add to cart POST is not the page the visitor was on; its same-host Referer is.
+        $page = $this->storeUrl->samePageReferer();
+        if ($page !== null) {
+            $attributes['path'] = $page;
         }
 
         $this->eventQueue->enqueue('add_to_cart', $attributes);

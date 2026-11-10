@@ -43,7 +43,7 @@ class EventConsumerTest extends TestCase
             $this->createStub(MessagePublisher::class),
             $curls,
             $this->createStub(LoggerInterface::class),
-            new StoreUrl($stores)
+            new StoreUrl($stores, $this->createStub(\Magento\Framework\App\RequestInterface::class))
         ))->process((string) json_encode([
             'version' => 1,
             'attempt' => 0,
@@ -74,7 +74,10 @@ class EventConsumerTest extends TestCase
                 $publisher,
                 $curls,
                 $this->createStub(LoggerInterface::class),
-                new StoreUrl($this->createStub(StoreManagerInterface::class))
+                new StoreUrl(
+                    $this->createStub(StoreManagerInterface::class),
+                    $this->createStub(\Magento\Framework\App\RequestInterface::class)
+                )
             ),
             $publisher,
         ];
