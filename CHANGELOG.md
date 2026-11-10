@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Docs and admin text: the Integration ID is on the install's Connect Magento step in
+  ConversionWax. The Magento install never had an Embed code tab.
+
 ## 0.5.0
 
 Breaking. Needs the Last Mile release with commit ec3b503 or later: the collector must serve

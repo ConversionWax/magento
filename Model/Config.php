@@ -45,7 +45,7 @@ class Config
     }
 
     /**
-     * The install's integration id from ConversionWax (Embed code tab), or '' when it is unset or not a
+     * The install's integration id from ConversionWax (Connect Magento step), or '' when it is unset or not a
      * UUID. lm.js tracks nothing without it.
      *
      * @param int $storeId
