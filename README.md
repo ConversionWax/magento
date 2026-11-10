@@ -128,21 +128,21 @@ The package requires PHP 8.1 or later and Magento 2.4.
 
 1. In ConversionWax, open the website's Last Mile settings and add a Magento install under
    Integrations.
-2. Copy the website's Website ID, then generate the install's connection token and copy it
-   immediately (it is shown once).
-3. Open the install's Embed code tab and copy its Integration ID (`data-cwax-integration-id`).
-4. In Magento Admin, open Stores > Configuration > ConversionWax > Last Mile.
-5. Set Enabled to Yes and enter the Website ID, Integration ID and connection token.
-6. Leave Environment on Production. Choose Staging only to test against the ConversionWax staging
+2. The install's Connect Magento step lists every setting under the name Magento Admin uses:
+   ConversionWax Website ID, Integration ID and Connection Token. Generate the token there and
+   copy it immediately (it is shown once).
+3. In Magento Admin, open Stores > Configuration > ConversionWax > Last Mile.
+4. Set Enabled to Yes and enter the ConversionWax Website ID, Integration ID and Connection Token.
+5. Leave Environment on Production. Choose Staging only to test against the ConversionWax staging
    service.
-7. Leave Load Last Mile on Magento storefront on Yes, unless another front end already loads its
+6. Leave Load Last Mile on Magento storefront on Yes, unless another front end already loads its
    own `lm.js` for this website. Flush the cache.
 
 Settings (all can be set per store view):
 
 - **ConversionWax Website ID.** The `data-cwax-site-id` of the tag and the `storeId` of every server
   event.
-- **Integration ID.** The install's id from the Embed code tab. It must be a UUID (checked at save
+- **Integration ID.** The install's id, shown on its Connect Magento step in ConversionWax. It must be a UUID (checked at save
   time). While it is empty, Magento adds no `lm.js` tag, so no views are tracked; server commerce
   events do not need it.
 - **Connection Token.** Authenticates server events and the consent mode lookup. Stored encrypted.

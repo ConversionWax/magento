@@ -26,8 +26,8 @@ class IntegrationId extends Value
         $value = trim((string) $this->getValue());
         if ($value !== '' && preg_match(self::UUID_PATTERN, $value) !== 1) {
             throw new LocalizedException(__(
-                'The Integration ID must be the 36-character ID from the Embed code tab of the install in '
-                . 'ConversionWax, for example 0f8fad5b-d9cb-469f-a165-70867728950e.'
+                'The Integration ID must be the 36-character ID from the Connect Magento step of the install '
+                . 'in ConversionWax, for example 0f8fad5b-d9cb-469f-a165-70867728950e.'
             ));
         }
         $this->setValue($value);

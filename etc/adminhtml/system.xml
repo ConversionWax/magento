@@ -57,7 +57,7 @@
                        showInStore="1">
                     <label>Integration ID</label>
                     <backend_model>Cwax\Banner\Model\Config\Backend\IntegrationId</backend_model>
-                    <comment>Copy it from the Embed code tab of this Magento install in ConversionWax (data-cwax-integration-id). Until it is set, Magento adds no Last Mile tag to the storefront, so page and product views are not tracked. Cart, checkout, login and order events do not need it.</comment>
+                    <comment>Copy it from the Connect Magento step of this Magento install in ConversionWax. Until it is set, Magento adds no Last Mile tag to the storefront, so page and product views are not tracked. Cart, checkout, login and order events do not need it.</comment>
                     <depends>
                         <field id="enabled">1</field>
                     </depends>
