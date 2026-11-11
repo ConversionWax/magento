@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
+- `checkout_start` is now recorded only when the checkout page renders. It used to fire before
+  Magento's guest-checkout check, so a guest on a store with guest checkout disabled was counted
+  as starting checkout and then redirected to the cart.
+- Server events carry the store base path. A store installed under a path such as `/ocmlabs`
+  reported `/checkout/` instead of `/ocmlabs/checkout/`.
+- `add_to_cart` records the page the visitor added from (the same-host Referer path) instead of
+  the add-to-cart POST URL. Without a usable Referer it falls back to the request path.
+- Earlier rows are not corrected.
 - Docs and admin text: the Integration ID is on the install's Connect Magento step in
   ConversionWax. The Magento install never had an Embed code tab.
 

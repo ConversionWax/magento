@@ -38,4 +38,14 @@ class ObserverRegistrationTest extends TestCase
             $this->assertDoesNotMatchRegularExpression('/PageView|ProductView|catalog_controller_product_view/', $registration);
         }
     }
+
+    public function testNoObserverReportsCheckoutStart(): void
+    {
+        // checkout_start comes from a plugin on the checkout page controller, which runs only when the
+        // page renders; a predispatch observer would also fire for redirects to the cart.
+        foreach ($this->registrations() as $registration) {
+            $this->assertStringNotContainsString('checkout_index_index', $registration);
+            $this->assertStringNotContainsString('CheckoutStart', $registration);
+        }
+    }
 }

@@ -5,20 +5,24 @@ declare(strict_types=1);
 namespace Cwax\Banner\Test\Unit\Model\Lastmile;
 
 use Cwax\Banner\Model\Lastmile\StoreUrl;
+use Magento\Framework\App\Request\Http;
 use Magento\Store\Model\Store;
 use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 
 class StoreUrlTest extends TestCase
 {
-    private function storeUrl(string $baseUrl): StoreUrl
+    private function storeUrl(string $baseUrl, ?string $referer = null): StoreUrl
     {
         $store = $this->createStub(Store::class);
         $store->method('getBaseUrl')->willReturn($baseUrl);
         $stores = $this->createStub(StoreManagerInterface::class);
         $stores->method('getStore')->willReturn($store);
 
-        return new StoreUrl($stores);
+        $request = $this->createStub(Http::class);
+        $request->method('getServer')->willReturn($referer);
+
+        return new StoreUrl($stores, $request);
     }
 
     public function testARelativeEntryGetsTheStoreOrigin(): void
@@ -43,5 +47,40 @@ class StoreUrlTest extends TestCase
             'https://other.test/x',
             $this->storeUrl('https://shop.test/')->absolute(1, 'https://other.test/x')
         );
+    }
+
+    public function testBasePathFromStoreUrl(): void
+    {
+        $this->assertSame(
+            '/ocmlabs',
+            $this->storeUrl('https://www.orangecollarmedia.com/ocmlabs/')->basePath()
+        );
+    }
+
+    public function testRootStoreBasePathEmpty(): void
+    {
+        $this->assertSame('', $this->storeUrl('https://shop.test/')->basePath());
+    }
+
+    public function testSamePageReferer(): void
+    {
+        $url = $this->storeUrl(
+            'https://www.orangecollarmedia.com/ocmlabs/',
+            'https://www.orangecollarmedia.com/ocmlabs/fees.html?x=1'
+        );
+
+        $this->assertSame('/ocmlabs/fees.html', $url->samePageReferer());
+    }
+
+    public function testAddToCartIgnoresForeignReferer(): void
+    {
+        $this->assertNull(
+            $this->storeUrl('https://shop.test/', 'https://evil.test/a')->samePageReferer()
+        );
+    }
+
+    public function testMissingRefererIsNull(): void
+    {
+        $this->assertNull($this->storeUrl('https://shop.test/')->samePageReferer());
     }
 }

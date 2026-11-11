@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Cwax\Banner\Model\Lastmile;
 
+use Magento\Framework\App\RequestInterface;
+use Magento\Framework\HTTP\PhpEnvironment\Request as PhpRequest;
 use Magento\Store\Model\StoreManagerInterface;
 
 /**
@@ -14,8 +16,37 @@ class StoreUrl
 {
     private const MAX_LENGTH = 2048;
 
-    public function __construct(private readonly StoreManagerInterface $storeManager)
+    public function __construct(
+        private readonly StoreManagerInterface $storeManager,
+        private readonly RequestInterface $request
+    ) {
+    }
+
+    /** Path of the current store's base URL without a trailing slash: "/ocmlabs", or "" at the root. */
+    public function basePath(): string
     {
+        $path = parse_url((string) $this->storeManager->getStore()->getBaseUrl(), PHP_URL_PATH);
+
+        return is_string($path) ? rtrim($path, '/') : '';
+    }
+
+    /** Path of the Referer (no query string) when it is on the store host, else null. */
+    public function samePageReferer(): ?string
+    {
+        $referer = $this->request instanceof PhpRequest ? $this->request->getServer('HTTP_REFERER') : null;
+        if (!is_string($referer) || $referer === '') {
+            return null;
+        }
+        $parts = parse_url(substr($referer, 0, self::MAX_LENGTH));
+        $base = parse_url((string) $this->storeManager->getStore()->getBaseUrl());
+        if ($parts === false || $base === false || !isset($parts['host'], $base['host'])
+            || strtolower($parts['host']) !== strtolower($base['host'])
+        ) {
+            return null;
+        }
+        $path = (string) ($parts['path'] ?? '');
+
+        return $path === '' ? '/' : $path;
     }
 
     public function absolute(int $storeId, string $url): string

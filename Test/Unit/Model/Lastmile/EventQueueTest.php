@@ -9,6 +9,7 @@ use Cwax\Banner\Api\Data\ConsentDecisionInterface;
 use Cwax\Banner\Model\Config;
 use Cwax\Banner\Model\Consent\ConsentDecision;
 use Cwax\Banner\Model\Lastmile\EventQueue;
+use Cwax\Banner\Model\Lastmile\StoreUrl;
 use Cwax\Banner\Model\Lastmile\VisitorContext;
 use Cwax\Banner\Model\Queue\MessagePublisher;
 use Magento\Framework\App\Request\Http;
@@ -40,7 +41,8 @@ class EventQueueTest extends TestCase
             $stores,
             $consent,
             $this->createStub(RequestInterface::class),
-            $this->createStub(LoggerInterface::class)
+            $this->createStub(LoggerInterface::class),
+            $this->storeUrl()
         );
     }
 
@@ -81,8 +83,12 @@ class EventQueueTest extends TestCase
      * @param array<string, mixed> $attributes
      * @return array<string, mixed> the event that was published
      */
-    private function published(string $path, array $attributes = [], ?RequestInterface $request = null): array
-    {
+    private function published(
+        string $path,
+        array $attributes = [],
+        ?RequestInterface $request = null,
+        string $basePath = ''
+    ): array {
         $config = $this->createStub(Config::class);
         $config->method('isConfigured')->willReturn(true);
         $consent = $this->createStub(ConsentResolverInterface::class);
@@ -123,7 +129,8 @@ class EventQueueTest extends TestCase
             $stores,
             $consent,
             $request,
-            $this->createStub(LoggerInterface::class)
+            $this->createStub(LoggerInterface::class),
+            $this->storeUrl($basePath)
         ))->enqueue('add_to_cart', $attributes);
 
         return $message['payload']['events'][0];
@@ -157,6 +164,48 @@ class EventQueueTest extends TestCase
         $event = $this->published('', [], $this->storefrontRequest('/checkout/cart/', '/checkout/cart/'));
 
         $this->assertSame('/checkout/cart/', $event['path']);
+    }
+
+    public function testPathIncludesBasePath(): void
+    {
+        $event = $this->published(
+            '',
+            [],
+            $this->storefrontRequest('/checkout/', '/checkout/'),
+            '/ocmlabs'
+        );
+
+        $this->assertSame('/ocmlabs/checkout/', $event['path']);
+    }
+
+    public function testRootStoreKeepsPath(): void
+    {
+        $event = $this->published('', [], $this->storefrontRequest('/checkout/', '/checkout/'), '');
+
+        $this->assertSame('/checkout/', $event['path']);
+    }
+
+    public function testExplicitPathNotPrefixed(): void
+    {
+        $event = $this->published(
+            '',
+            ['path' => '/ocmlabs/fees.html'],
+            $this->storefrontRequest('/checkout/', '/checkout/'),
+            '/ocmlabs'
+        );
+
+        $this->assertSame('/ocmlabs/fees.html', $event['path']);
+    }
+
+    public function testGuestCartMaskStillAppliesAfterBasePrefix(): void
+    {
+        $request = $this->createStub(RestRequest::class);
+        $request->method('getPathInfo')->willReturn('/rest/default/V1/guest-carts/rIX3Jabc123/items');
+        $request->method('getServer')->willReturn(null);
+
+        $event = $this->published('', [], $request, '/ocmlabs');
+
+        $this->assertSame('/ocmlabs/rest/default/V1/guest-carts/-/items', $event['path']);
     }
 
     public function testARestRequestStillMasksTheGuestCartId(): void
@@ -244,7 +293,15 @@ class EventQueueTest extends TestCase
             $stores,
             $consent,
             $request,
-            $this->createStub(LoggerInterface::class)
+            $this->createStub(LoggerInterface::class),
+            $this->storeUrl()
         );
+    }
+
+    private function storeUrl(string $basePath = ''): StoreUrl
+    {
+        $storeUrl = $this->createStub(StoreUrl::class);
+        $storeUrl->method('basePath')->willReturn($basePath);
+        return $storeUrl;
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cwax\Banner\Test\Unit\Observer\Lastmile;
 
 use Cwax\Banner\Model\Lastmile\EventQueue;
+use Cwax\Banner\Model\Lastmile\StoreUrl;
 use Cwax\Banner\Observer\Lastmile\AddToCartObserver;
 use Magento\Framework\App\State;
 use Magento\Framework\Event;
@@ -37,11 +38,36 @@ class AddToCartObserverTest extends TestCase
         $this->observer($queue)->execute($this->event([$this->item('24-MB01', 34.0)]));
     }
 
-    private function observer(EventQueue $queue): AddToCartObserver
+    public function testUsesRefererPath(): void
+    {
+        $queue = $this->createMock(EventQueue::class);
+        $queue->expects($this->once())
+            ->method('enqueue')
+            ->with('add_to_cart', ['productId' => '24-MB01', 'value' => 34.0, 'path' => '/ocmlabs/fees.html']);
+
+        $this->observer($queue, '/ocmlabs/fees.html')->execute($this->event([$this->item('24-MB01', 34.0)]));
+    }
+
+    public function testFallsBackWithoutReferer(): void
+    {
+        $queue = $this->createMock(EventQueue::class);
+        $queue->expects($this->once())
+            ->method('enqueue')
+            ->with(
+                'add_to_cart',
+                $this->callback(static fn (array $attributes): bool => !array_key_exists('path', $attributes))
+            );
+
+        $this->observer($queue, null)->execute($this->event([$this->item('24-MB01', 34.0)]));
+    }
+
+    private function observer(EventQueue $queue, ?string $referer = null): AddToCartObserver
     {
         $state = $this->createMock(State::class);
         $state->method('getAreaCode')->willReturn('frontend');
-        return new AddToCartObserver($queue, $state, $this->createMock(LoggerInterface::class));
+        $storeUrl = $this->createStub(StoreUrl::class);
+        $storeUrl->method('samePageReferer')->willReturn($referer);
+        return new AddToCartObserver($queue, $state, $this->createMock(LoggerInterface::class), $storeUrl);
     }
 
     /** @param list<object> $items */
