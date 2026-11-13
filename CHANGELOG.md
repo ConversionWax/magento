@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.2
+
+- Purchase events now carry `grossAmount` (grand total), `subtotalAmount`, `discountAmount`
+  (absolute value), `taxAmount` and `shippingAmount` as decimal strings in the order currency.
+  An amount Magento does not report is left out. `value` and `currency` are unchanged. Needs a
+  collector that accepts these fields (the current one does). Earlier rows are not corrected.
+
 ## 0.5.1
 
 - `checkout_start` is now recorded only when the checkout page renders. It used to fire before
