@@ -226,6 +226,35 @@ class EventQueueTest extends TestCase
         $this->assertSame('/rest/default/V1/guest-carts/-/items', $event['path']);
     }
 
+    public function testPurchaseAmountsReachTheCollector(): void
+    {
+        $event = $this->published('/checkout/onepage/success/', [
+            'orderId' => '000000042',
+            'value' => 0.0,
+            'currency' => 'USD',
+            'grossAmount' => '0',
+            'subtotalAmount' => '12.5',
+            'discountAmount' => '12.5',
+            'taxAmount' => '0',
+            'shippingAmount' => '0',
+        ]);
+
+        $this->assertSame('0', $event['grossAmount']);
+        $this->assertSame('12.5', $event['subtotalAmount']);
+        $this->assertSame('12.5', $event['discountAmount']);
+        $this->assertSame('0', $event['taxAmount']);
+        $this->assertSame('0', $event['shippingAmount']);
+        $this->assertSame(0.0, $event['value']);
+    }
+
+    public function testAbsentAmountsAreLeftOut(): void
+    {
+        $event = $this->published('/checkout/onepage/success/', ['orderId' => '000000043']);
+
+        $this->assertArrayNotHasKey('grossAmount', $event);
+        $this->assertArrayNotHasKey('netSalesAmount', $event);
+    }
+
     public function testAnExplicitPathReplacesTheRequestPath(): void
     {
         $event = $this->published('/checkout/cart/add/', ['path' => '/sale']);

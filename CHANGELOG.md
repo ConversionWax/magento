@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.3
+
+- Fix: 0.5.2 built the purchase amounts but the event queue dropped them, so `grossAmount`,
+  `subtotalAmount`, `discountAmount`, `taxAmount` and `shippingAmount` never reached the
+  collector (prod order 020263306 arrived with all five NULL). The queue now forwards them.
+  Earlier rows are not corrected.
+
 ## 0.5.2
 
 - Purchase events now carry `grossAmount` (grand total), `subtotalAmount`, `discountAmount`
