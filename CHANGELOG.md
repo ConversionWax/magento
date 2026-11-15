@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.5
+
+- Fix: creating an account sent two `identify` events, because Magento dispatches
+  `customer_register_success` and then `customer_login` for the new customer in the same request.
+  The visit page showed "Account link observed" twice (prod test 2026-11-15). The observer now
+  sends one `identify` per customer per request. Identity data was not affected.
+
 ## 0.5.4
 
 - Fix: `checkout_start` was recorded once per Magento checkout session, and that session outlives
