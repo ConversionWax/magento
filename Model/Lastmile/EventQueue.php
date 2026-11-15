@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
 
 class EventQueue
 {
-    private const SDK_VERSION = 'magento-0.5.4';
+    private const SDK_VERSION = 'magento-0.5.5';
     private bool $sessionStartQueued = false;
     private ?ConsentDecisionInterface $consentDecision = null;
 
