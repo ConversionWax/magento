@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.4
+
+- Fix: `checkout_start` was recorded once per Magento checkout session, and that session outlives
+  an order. A shopper who placed an order and then checked out again in the same session (prod
+  order 020263316) got no `checkout_start`. The once-only guard is now keyed by quote id, so a
+  reload of the same cart is still ignored but a new cart counts. Earlier rows are not corrected.
+
 ## 0.5.3
 
 - Fix: 0.5.2 built the purchase amounts but the event queue dropped them, so `grossAmount`,
