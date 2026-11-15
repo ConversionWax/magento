@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
 
 class EventQueue
 {
-    private const SDK_VERSION = 'magento-0.5.2';
+    private const SDK_VERSION = 'magento-0.5.3';
     private bool $sessionStartQueued = false;
     private ?ConsentDecisionInterface $consentDecision = null;
 
@@ -95,6 +95,11 @@ class EventQueue
             'currency' => $attributes['currency'] ?? null,
             'customerId' => $attributes['customerId'] ?? null,
             'emailHash' => $attributes['emailHash'] ?? null,
+            'grossAmount' => $attributes['grossAmount'] ?? null,
+            'subtotalAmount' => $attributes['subtotalAmount'] ?? null,
+            'discountAmount' => $attributes['discountAmount'] ?? null,
+            'taxAmount' => $attributes['taxAmount'] ?? null,
+            'shippingAmount' => $attributes['shippingAmount'] ?? null,
         ], static fn (mixed $value): bool => $value !== null && $value !== '');
 
         $isNew = $context['isNew'] && !$this->sessionStartQueued;
