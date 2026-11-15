@@ -16,10 +16,11 @@ use PHPUnit\Framework\TestCase;
 
 class CheckoutStartPluginTest extends TestCase
 {
-    private function session(int $items, bool $fired = false): CheckoutSession
+    private function session(int $items, mixed $fired = null, string $quoteId = '7'): CheckoutSession
     {
         $quote = $this->createStub(Quote::class);
         $quote->method('getItemsCount')->willReturn($items);
+        $quote->method('getId')->willReturn($quoteId);
         $session = $this->createStub(CheckoutSession::class);
         $session->method('getQuote')->willReturn($quote);
         $session->method('getData')->willReturn($fired);
@@ -56,12 +57,30 @@ class CheckoutStartPluginTest extends TestCase
             ->afterExecute($this->createStub(Index::class), $this->createStub(Page::class));
     }
 
-    public function testOncePerSession(): void
+    public function testOncePerQuote(): void
     {
         $queue = $this->createMock(EventQueue::class);
         $queue->expects($this->never())->method('enqueue');
 
-        (new CheckoutStartPlugin($queue, $this->session(2, true), $this->createStub(VisitorContext::class)))
+        (new CheckoutStartPlugin($queue, $this->session(2, '7', '7'), $this->createStub(VisitorContext::class)))
+            ->afterExecute($this->createStub(Index::class), $this->createStub(Page::class));
+    }
+
+    public function testANewCartAfterAnOrderInTheSameSessionRecordsAgain(): void
+    {
+        $queue = $this->createMock(EventQueue::class);
+        $queue->expects($this->once())->method('enqueue')->with('checkout_start');
+
+        (new CheckoutStartPlugin($queue, $this->session(1, '7', '8'), $this->createStub(VisitorContext::class)))
+            ->afterExecute($this->createStub(Index::class), $this->createStub(Page::class));
+    }
+
+    public function testTheOldBooleanFlagDoesNotBlockANewCart(): void
+    {
+        $queue = $this->createMock(EventQueue::class);
+        $queue->expects($this->once())->method('enqueue')->with('checkout_start');
+
+        (new CheckoutStartPlugin($queue, $this->session(1, true, '8'), $this->createStub(VisitorContext::class)))
             ->afterExecute($this->createStub(Index::class), $this->createStub(Page::class));
     }
 

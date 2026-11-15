@@ -55,11 +55,13 @@ class CheckoutStartPlugin
             return;
         }
 
-        if ($this->checkoutSession->getData(self::CHECKOUT_START_FIRED_KEY)) {
-            // Already fired once for this checkout session; a reload must not queue a new event.
+        // Keyed by quote id: a reload of the same cart must not queue a new event, but the checkout
+        // session outlives an order, so a new cart in the same session is a new checkout.
+        $quoteId = method_exists($quote, 'getId') ? (string) $quote->getId() : '';
+        if ($quoteId !== '' && $this->checkoutSession->getData(self::CHECKOUT_START_FIRED_KEY) === $quoteId) {
             return;
         }
-        $this->checkoutSession->setData(self::CHECKOUT_START_FIRED_KEY, true);
+        $this->checkoutSession->setData(self::CHECKOUT_START_FIRED_KEY, $quoteId);
 
         // The checkout page is never cacheable (Magento_Checkout declares it so), but it is a GET whose
         // Cache-Control is not set yet. Saying so now lets a visitor without _cwid (lm.js blocked) be
