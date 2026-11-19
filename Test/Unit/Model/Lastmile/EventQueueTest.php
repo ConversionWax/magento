@@ -22,6 +22,9 @@ use Psr\Log\LoggerInterface;
 
 class EventQueueTest extends TestCase
 {
+    /** @var bool|null what enqueue() answered in published() */
+    private ?bool $lastEnqueueResult = null;
+
     private function queue(bool $configured, ?bool $storage, VisitorContext $context): EventQueue
     {
         $config = $this->createStub(Config::class);
@@ -79,6 +82,22 @@ class EventQueueTest extends TestCase
         $this->queue(true, true, $context)->enqueue('add_to_cart', ['productId' => 'SKU']);
     }
 
+    public function testEnqueueAnswersFalseWhenNothingIsQueued(): void
+    {
+        $context = $this->createStub(VisitorContext::class);
+
+        $this->assertFalse($this->queue(true, false, $context)->enqueue('identify', ['emailHash' => 'h']));
+        $this->assertFalse($this->queue(false, true, $context)->enqueue('identify', ['emailHash' => 'h']));
+        // Storage consent without measurement consent: identity only, no event.
+        $this->assertFalse($this->queue(true, true, $context)->enqueue('identify', ['emailHash' => 'h']));
+    }
+
+    public function testEnqueueAnswersTrueWhenTheEventIsQueued(): void
+    {
+        $this->assertNotEmpty($this->published('/checkout', ['emailHash' => str_repeat('a', 64)]));
+        $this->assertTrue($this->lastEnqueueResult);
+    }
+
     /**
      * @param array<string, mixed> $attributes
      * @return array<string, mixed> the event that was published
@@ -122,7 +141,7 @@ class EventQueueTest extends TestCase
             }
         );
 
-        (new EventQueue(
+        $this->lastEnqueueResult = (new EventQueue(
             $config,
             $context,
             $publisher,

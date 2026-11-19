@@ -19,6 +19,7 @@
     "magento/module-customer": "^103.0",
     "magento/module-message-queue": "^100.4",
     "magento/module-mysql-mq": "^100.4",
+    "magento/module-newsletter": "^100.4",
     "magento/module-quote": "^101.2",
     "magento/module-sales": "^103.0",
     "magento/module-store": "^101.1",
