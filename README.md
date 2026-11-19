@@ -59,7 +59,10 @@ store view config decides whether they are sent.
 - `refundAmount` = credit memo subtotal minus its discount. No tax, shipping or adjustments.
 - `netSalesAmount` = order net after the change: subtotal minus canceled and refunded subtotal, minus
   the discount that is still applied. No tax, shipping or adjustments. A full cancel or a full refund
-  gives `0`.
+  gives `0`. A discount that includes tax (Apply Discount On Prices: Including Tax) is counted without
+  its tax part (discount tax compensation), in `refundAmount` too. The canceled discount is capped at
+  the discount not yet invoiced, because Magento 2.4.6 stores too large a `discount_canceled` on a
+  partly invoiced order.
 - Amounts and currency are the order currency, the same as the `purchase` event.
 - `eventId` is `refund-<credit memo entity ID>` or `cancel-<order increment ID>`, so a retry is
   deduplicated.

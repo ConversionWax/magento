@@ -64,6 +64,84 @@ class OrderNetSalesTest extends TestCase
         $this->assertSame('54', (new OrderNetSales())->netAfterChange($order));
     }
 
+    public function testCancelOfPartlyInvoicedOrderMagento248Form(): void
+    {
+        // 2.4.7 and later: discount_canceled = abs(discount_amount) - abs(discount_invoiced) = 4.
+        $order = $this->order([
+            'subtotal' => 100.0, 'discount' => -10.0, 'discount_invoiced' => -6.0,
+            'subtotal_canceled' => 40.0, 'discount_canceled' => 4.0,
+        ]);
+
+        $this->assertSame('54', (new OrderNetSales())->netAfterChange($order));
+    }
+
+    public function testCancelOfPartlyInvoicedOrderMagento246Form(): void
+    {
+        // 2.4.6: discount_canceled = abs(discount_amount) - discount_invoiced, and discount_invoiced is
+        // negative, so Magento stores 16. Only the uninvoiced discount (4) can be canceled.
+        $order = $this->order([
+            'subtotal' => 100.0, 'discount' => -10.0, 'discount_invoiced' => -6.0,
+            'subtotal_canceled' => 40.0, 'discount_canceled' => 16.0,
+        ]);
+
+        $this->assertSame('54', (new OrderNetSales())->netAfterChange($order));
+    }
+
+    public function testCancelOfUninvoicedOrderIsZeroInBothForms(): void
+    {
+        foreach ([5.0, 10.0] as $canceled) {
+            $order = $this->order([
+                'subtotal' => 45.0, 'discount' => -5.0, 'discount_invoiced' => null,
+                'subtotal_canceled' => 45.0, 'discount_canceled' => $canceled,
+            ]);
+            $this->assertSame('0', (new OrderNetSales())->netAfterChange($order));
+        }
+    }
+
+    public function testDiscountIncludingTaxIsTakenBeforeTax(): void
+    {
+        // Subtotal 100 net of 20 percent VAT, 10 percent discount on the gross 120: discount_amount 12,
+        // of which 2 is tax (discount_tax_compensation_amount). Net before tax is 100 - 10 = 90.
+        $order = $this->order(['subtotal' => 100.0, 'discount' => -12.0, 'comp' => 2.0]);
+
+        $this->assertSame('90', (new OrderNetSales())->netAfterChange($order));
+    }
+
+    public function testDiscountIncludingTaxAfterPartialRefund(): void
+    {
+        // Half refunded: subtotal 50, discount 6 of which 1 is tax compensation. Net 50 - 5 = 45.
+        $order = $this->order([
+            'subtotal' => 100.0, 'discount' => -12.0, 'comp' => 2.0,
+            'subtotal_refunded' => 50.0, 'discount_refunded' => -6.0, 'comp_refunded' => 1.0,
+        ]);
+
+        $this->assertSame('45', (new OrderNetSales())->netAfterChange($order));
+    }
+
+    public function testDiscountIncludingTaxAfterCancelOfPartlyInvoicedOrder(): void
+    {
+        // Invoiced 60: discount 7.2 (compensation 1.2). Canceled 40: discount 4.8 (compensation 0.8).
+        // Net 60 - 6 = 54, in both the 2.4.6 (discount_canceled 12 + 7.2 = 19.2) and 2.4.8 (4.8) forms.
+        foreach ([4.8, 19.2] as $canceled) {
+            $order = $this->order([
+                'subtotal' => 100.0, 'discount' => -12.0, 'comp' => 2.0,
+                'discount_invoiced' => -7.2, 'comp_invoiced' => 1.2,
+                'subtotal_canceled' => 40.0, 'discount_canceled' => $canceled,
+            ]);
+            $this->assertSame('54', (new OrderNetSales())->netAfterChange($order));
+        }
+    }
+
+    public function testRefundAmountWithDiscountIncludingTax(): void
+    {
+        $creditmemo = $this->createMock(CreditmemoInterface::class);
+        $creditmemo->method('getSubtotal')->willReturn(50.0);
+        $creditmemo->method('getDiscountAmount')->willReturn(-6.0);
+        $creditmemo->method('getDiscountTaxCompensationAmount')->willReturn(1.0);
+
+        $this->assertSame('45', (new OrderNetSales())->refundAmount($creditmemo));
+    }
+
     public function testNeverNegative(): void
     {
         $order = $this->order(['subtotal' => 10.0, 'discount' => -0.0, 'subtotal_refunded' => 10.01]);
@@ -127,6 +205,10 @@ class OrderNetSalesTest extends TestCase
         $order->method('getDiscountRefunded')->willReturn($values['discount_refunded'] ?? null);
         $order->method('getSubtotalCanceled')->willReturn($values['subtotal_canceled'] ?? null);
         $order->method('getDiscountCanceled')->willReturn($values['discount_canceled'] ?? null);
+        $order->method('getDiscountInvoiced')->willReturn($values['discount_invoiced'] ?? null);
+        $order->method('getDiscountTaxCompensationAmount')->willReturn($values['comp'] ?? null);
+        $order->method('getDiscountTaxCompensationInvoiced')->willReturn($values['comp_invoiced'] ?? null);
+        $order->method('getDiscountTaxCompensationRefunded')->willReturn($values['comp_refunded'] ?? null);
 
         return $order;
     }

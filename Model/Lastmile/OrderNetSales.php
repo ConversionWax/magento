@@ -30,11 +30,30 @@ class OrderNetSales
         $products = $subtotal
             - ($this->number($order->getSubtotalCanceled()) ?? 0.0)
             - ($this->number($order->getSubtotalRefunded()) ?? 0.0);
-        $discount = abs($this->number($order->getDiscountAmount()) ?? 0.0)
-            - abs($this->number($order->getDiscountCanceled()) ?? 0.0)
-            - abs($this->number($order->getDiscountRefunded()) ?? 0.0);
+        $discount = $this->abs($order->getDiscountAmount());
+        $compensation = $this->abs($order->getDiscountTaxCompensationAmount());
 
-        return $this->format(max(0.0, $products - max(0.0, $discount)));
+        // Only the discount not yet invoiced can be canceled. Magento 2.4.6 stores discount_canceled as
+        // abs(discount_amount) - discount_invoiced with a negative discount_invoiced, which is too large
+        // on a partly invoiced order; 2.4.8 stores abs(discount_amount) - abs(discount_invoiced).
+        // The bound gives the same result for both forms.
+        $canceled = min(
+            $this->abs($order->getDiscountCanceled()),
+            max(0.0, $discount - $this->abs($order->getDiscountInvoiced()))
+        );
+        $canceledCompensation = $canceled > 0.0
+            ? min($canceled, max(0.0, $compensation - $this->abs($order->getDiscountTaxCompensationInvoiced())))
+            : 0.0;
+        $refunded = max(
+            0.0,
+            $this->abs($order->getDiscountRefunded()) - $this->abs($order->getDiscountTaxCompensationRefunded())
+        );
+
+        // With "Apply Discount On Prices: Including Tax" the discount includes tax; the tax part is the
+        // discount tax compensation. The subtotal excludes tax, so the discount is taken before tax too.
+        $remaining = ($discount - $compensation) - ($canceled - $canceledCompensation) - $refunded;
+
+        return $this->format(max(0.0, $products - max(0.0, $remaining)));
     }
 
     /** Products minus discount of one credit memo; no tax, shipping or adjustments. */
@@ -44,9 +63,18 @@ class OrderNetSales
         if ($subtotal === null) {
             return null;
         }
-        $discount = abs($this->number($creditmemo->getDiscountAmount()) ?? 0.0);
+        $discount = max(
+            0.0,
+            $this->abs($creditmemo->getDiscountAmount()) - $this->abs($creditmemo->getDiscountTaxCompensationAmount())
+        );
 
         return $this->format(max(0.0, $subtotal - $discount));
+    }
+
+    /** Magnitude of a Magento amount; 0 when it is unset or not a number. */
+    private function abs(mixed $value): float
+    {
+        return abs($this->number($value) ?? 0.0);
     }
 
     private function number(mixed $value): ?float
