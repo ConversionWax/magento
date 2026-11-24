@@ -255,3 +255,23 @@ The original widget remains available. It accepts a `banner_div` value and loads
 `https://assets.conversionwax.com/dist/app.js` on storefront pages. The CSP whitelist permits
 ConversionWax script, style, image, and connection hosts (`*.conversionwax.com`), which also covers
 `lm.js` and the collector it reports to.
+
+## Cart for the banner embed
+
+Banner content can show the live cart: the tokens `{{cart_remaining N}}`, `{{cart_total}}` and
+`{{cart_items}}` and the audience keys `cart_total` and `cart_open` (free-shipping bar,
+left-in-cart message). On every storefront page `cart.phtml` gives the embed the cart in the form
+it expects on sites that are not Shopify: `window.cwaxCart = {total, currency, items}` and, on
+each change, a `cwax:cart` window event with the same object as `detail`.
+
+- `total` is the cart section's `subtotalAmount`: the quote subtotal in the store view's current
+  currency, before discounts and shipping (tax as the store's subtotal setting). `items` is
+  `summary_count` (rounded up to a whole number). `currency` is the store view's current currency.
+- Luma reads the `cart` section through `Magento_Customer/js/customer-data` and follows each update
+  (add, remove, quantity, mini cart reload, section reload on a cached page). Hyva reads
+  `private-content-loaded`. No RequireJS config and no separate Hyva layout are needed.
+- Full-page cache safe: the HTML holds only the currency code, which is part of the page cache key.
+  Cart values exist only in the browser, from Magento's private content. Nothing is stored and
+  nothing is sent to a server, so no consent gate applies (the embed gates claim-based keys itself).
+- Until Magento has loaded the cart section (a new visitor who has not used the cart yet), nothing
+  is set and the embed treats the cart as unknown: only the default variant shows.

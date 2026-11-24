@@ -13,6 +13,14 @@
                     <argument name="view_model" xsi:type="object">Cwax\Banner\ViewModel\LastmileSnippet</argument>
                 </arguments>
             </block>
+            <!-- Live cart for the banner embed (window.cwaxCart and the cwax:cart event). -->
+            <block class="Magento\Framework\View\Element\Template"
+                   name="cwax.cart"
+                   template="Cwax_Banner::cart.phtml">
+                <arguments>
+                    <argument name="view_model" xsi:type="object">Cwax\Banner\ViewModel\CartData</argument>
+                </arguments>
+            </block>
         </referenceContainer>
     </body>
 </page>

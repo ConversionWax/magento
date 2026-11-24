@@ -1,0 +1,87 @@
+<?php
+/**
+ * Gives the ConversionWax banner embed the live cart (CWTASKS-132: free-shipping bar, left-in-cart
+ * message). Plain JavaScript like lastmile.phtml, so one template serves Luma and Hyva.
+ *
+ * Contract of the embed: window.cwaxCart = {total, currency, items} and, on each change, a
+ * window 'cwax:cart' CustomEvent with the same object as detail. total is the cart subtotal
+ * (customer data cart section subtotalAmount, quote currency, normal units, before discounts,
+ * shipping and, by Magento default, tax); items is summary_count (whole number). A value that
+ * does not pass the checks is not sent, so the embed keeps the cart unknown.
+ *
+ * Static for every visitor of a page (full-page cache): the only server value is the store's current
+ * currency code, which is part of Magento's page cache key. Cart values come from Magento's private
+ * content in the browser only:
+ *  - Luma: RequireJS Magento_Customer/js/customer-data, section 'cart', read at once and on each update
+ *    (add, remove, quantity change, mini cart reload, section reload after a cached page);
+ *  - Hyva: the 'private-content-loaded' window event, detail.data.cart.
+ * The cart stays in page memory. Nothing is stored and nothing is sent to a server.
+ *
+ * @var \Magento\Framework\View\Element\Template $block
+ * @var \Magento\Framework\View\Helper\SecureHtmlRenderer $secureRenderer
+ */
+declare(strict_types=1);
+
+/** @var \Cwax\Banner\ViewModel\CartData $viewModel */
+$viewModel = $block->getData('view_model');
+$currency = $viewModel->getCurrencyCode();
+if (preg_match('/^[A-Z]{3}$/', $currency) !== 1) {
+    return;
+}
+
+$source = <<<'JS'
+(function(w,d){
+var currency=__CURRENCY__;
+var number=function(value){
+if(typeof value==='number'){return value;}
+if(typeof value==='string'&&value.trim()!==''){return Number(value);}
+return NaN;
+};
+// Section data to the embed's cart object, or null when the section says nothing usable.
+var toCart=function(section){
+if(!section||typeof section!=='object'){return null;}
+var count=number(section.summary_count);
+if(!isFinite(count)||count<0){return null;}
+// Decimal quantities are possible in Magento; any part of an item still means the cart is open.
+var items=Math.ceil(count);
+var total=section.subtotalAmount;
+if(total===null||total===undefined||total===''){
+if(items!==0){return null;}
+total=0;
+}
+total=number(total);
+if(!isFinite(total)||total<0){return null;}
+return {total:total,currency:currency,items:items};
+};
+var last='';
+var send=function(section){
+try{
+var cart=toCart(section);
+if(!cart){return;}
+var key=cart.total+'|'+cart.items;
+if(key===last){return;}
+last=key;
+w.cwaxCart=cart;
+w.dispatchEvent(new w.CustomEvent('cwax:cart',{detail:{total:cart.total,currency:cart.currency,items:cart.items}}));
+}catch(e){}
+};
+w.addEventListener('private-content-loaded',function(event){
+var data=event&&event.detail&&event.detail.data;
+send(data&&data.cart);
+});
+var luma=function(){
+if(typeof w.require!=='function'){return;}
+w.require(['Magento_Customer/js/customer-data'],function(customerData){
+var cart=customerData.get('cart');
+send(cart());
+cart.subscribe(send);
+});
+};
+if(d.readyState==='loading'){d.addEventListener('DOMContentLoaded',luma);}else{luma();}
+})(window,document);
+JS;
+$script = strtr($source, [
+    '__CURRENCY__' => json_encode($currency, JSON_THROW_ON_ERROR | JSON_HEX_TAG),
+]);
+?>
+<?= /* @noEscape */ $secureRenderer->renderTag('script', [], $script, false) ?>
