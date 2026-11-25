@@ -13,4 +13,14 @@
         <observer name="conversionwax_lastmile_customer_register"
                   instance="Cwax\Banner\Observer\Lastmile\IdentifyObserver"/>
     </event>
+    <!-- Guest checkout email (Hyva Checkout, other one page checkouts) and newsletter signup. Storefront
+         only: an admin order or an admin subscriber edit has no visitor of its own. -->
+    <event name="sales_quote_save_after">
+        <observer name="conversionwax_lastmile_guest_quote_email"
+                  instance="Cwax\Banner\Observer\Lastmile\GuestQuoteEmailObserver"/>
+    </event>
+    <event name="newsletter_subscriber_save_after">
+        <observer name="conversionwax_lastmile_newsletter_signup"
+                  instance="Cwax\Banner\Observer\Lastmile\NewsletterSubscriberObserver"/>
+    </event>
 </config>

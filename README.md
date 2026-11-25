@@ -90,6 +90,30 @@ The Staging environment loads the staging build
 (`https://dev.assets.conversionwax.com/lastmile/v1/lm.js`), which reports to the staging collector.
 `lm.js` does not start on `localhost`, `*.localhost` or `*.local` hosts.
 
+### Guest email and newsletter identify
+
+Two more sources send `identify`, with the same email hash as login (EmailHasher) and the visitor's
+`_cwid` and `_cws`, so the visit is joined to the email before an order exists:
+
+| Source | Area | Key data |
+| --- | --- | --- |
+| Guest email saved on the quote (`sales_quote_save_after`, email changed, no customer): Hyva Checkout, other one page checkouts, and the order placement | storefront, REST | email hash only |
+| Luma guest `set-payment-information` (plugin on `GuestPaymentInformationManagementInterface::savePaymentInformation`) | REST | email hash only |
+| Newsletter signup (`newsletter_subscriber_save_after`, into Subscribed or Not Activated) | storefront | email hash; customer ID when logged in |
+
+- Luma checkout keeps the guest email in the browser until a payment method calls
+  `set-payment-information` or the order is placed. The email availability check
+  (`customers/isEmailAvailable`) is not used: it does not save the email and runs while the guest
+  types.
+- One identify per identity (customer ID plus email hash) per request for every source. Guest
+  checkout and newsletter also send it once per Magento session: the session keeps the last
+  identity that was queued (a hash, never the email), so a reload sends nothing and a changed email
+  sends a new identify. A signup during registration does not add a second identify.
+- Consent is the same as for every commerce event: no storage consent, no measurement consent, or
+  no connection means nothing is queued, and the identity is not remembered.
+- The newsletter confirmation link sends nothing. Admin, cron and GraphQL saves send nothing.
+- An error is logged and never stops checkout or the signup.
+
 ## Visitor identity
 
 `lm.js` owns visitor identity on the storefront. It writes the first-party cookies `_cwid` (visitor

@@ -6,7 +6,9 @@ namespace Cwax\Banner\Test\Unit\Observer\Lastmile;
 
 use Cwax\Banner\Model\Lastmile\EmailHasher;
 use Cwax\Banner\Model\Lastmile\EventQueue;
+use Cwax\Banner\Model\Lastmile\IdentifyRecorder;
 use Cwax\Banner\Observer\Lastmile\IdentifyObserver;
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\Event;
 use Magento\Framework\Event\Observer;
 use PHPUnit\Framework\TestCase;
@@ -59,7 +61,14 @@ class IdentifyObserverTest extends TestCase
         $hasher = $this->createMock(EmailHasher::class);
         $hasher->method('hash')->willReturn('hash');
 
-        return new IdentifyObserver($queue, $hasher, $this->createMock(LoggerInterface::class));
+        $recorder = new IdentifyRecorder(
+            $queue,
+            $hasher,
+            $this->createStub(CheckoutSession::class),
+            $this->createStub(LoggerInterface::class)
+        );
+
+        return new IdentifyObserver($recorder, $this->createMock(LoggerInterface::class));
     }
 
     private function event(string $customerId): Observer

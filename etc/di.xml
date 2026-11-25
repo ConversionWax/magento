@@ -14,6 +14,13 @@
     <preference for="Cwax\Banner\Api\StoreConfigProviderInterface"
                 type="Cwax\Banner\Model\Consent\StoreConfigProvider"/>
 
+    <!-- A quote save can run while the checkout session is still loading its quote. -->
+    <type name="Cwax\Banner\Model\Lastmile\IdentifyRecorder">
+        <arguments>
+            <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
+        </arguments>
+    </type>
+
     <!--
         Third-party extension point: another module adds its own resolver
         purely by declaring, in its own di.xml, this same <type> node with one

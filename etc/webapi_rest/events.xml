@@ -8,4 +8,9 @@
         <observer name="conversionwax_lastmile_identity_flush"
                   instance="Cwax\Banner\Observer\Lastmile\IdentityFlushObserver"/>
     </event>
+    <!-- Luma checkout places a guest order through REST; the quote email is set there. -->
+    <event name="sales_quote_save_after">
+        <observer name="conversionwax_lastmile_guest_quote_email"
+                  instance="Cwax\Banner\Observer\Lastmile\GuestQuoteEmailObserver"/>
+    </event>
 </config>
