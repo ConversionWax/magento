@@ -22,6 +22,19 @@ class LayoutTest extends TestCase
         $this->assertSame('Cwax_Banner::lastmile.phtml', (string) $block[0]['template']);
     }
 
+    public function testEveryStorefrontPageGetsTheCartBlockInTheHead(): void
+    {
+        $layout = simplexml_load_file(self::LAYOUT . 'default.xml');
+        $block = $layout->xpath('//referenceContainer[@name="head.additional"]/block[@name="cwax.cart"]');
+
+        $this->assertCount(1, $block);
+        $this->assertSame('Cwax_Banner::cart.phtml', (string) $block[0]['template']);
+        // A block with cacheable="false" would turn off full-page cache for the whole store.
+        $this->assertNotSame('false', (string) $block[0]['cacheable']);
+        $argument = $block[0]->xpath('arguments/argument[@name="view_model"]');
+        $this->assertSame('Cwax\Banner\ViewModel\CartData', trim((string) $argument[0]));
+    }
+
     public function testNoHyvaSpecificLayoutIsNeeded(): void
     {
         $this->assertFileDoesNotExist(self::LAYOUT . 'hyva_default.xml');

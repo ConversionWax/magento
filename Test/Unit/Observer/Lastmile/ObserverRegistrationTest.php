@@ -39,6 +39,20 @@ class ObserverRegistrationTest extends TestCase
         }
     }
 
+    public function testRefundAndCancelObserversAreGlobal(): void
+    {
+        // Refunds and cancels happen in the admin, in REST calls and in cron (pending order cleanup), so the
+        // observers live in etc/events.xml, not in an area file.
+        $registrations = $this->registrations();
+        foreach ([
+            'etc/events.xml sales_order_creditmemo_refund Cwax\Banner\Observer\Lastmile\CreditmemoRefundObserver',
+            'etc/events.xml sales_order_creditmemo_save_after Cwax\Banner\Observer\Lastmile\CreditmemoSaveObserver',
+            'etc/events.xml order_cancel_after Cwax\Banner\Observer\Lastmile\OrderCancelObserver',
+        ] as $expected) {
+            $this->assertContains($expected, $registrations);
+        }
+    }
+
     public function testNoObserverReportsCheckoutStart(): void
     {
         // checkout_start comes from a plugin on the checkout page controller, which runs only when the

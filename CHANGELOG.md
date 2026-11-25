@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.0
+
+- New (CWTASKS-100): `identify` before an order exists, from the guest checkout email (saved on
+  the quote, or Luma `set-payment-information`) and from newsletter signup. Email hash only for
+  guests, plus customer ID for a logged-in signup. One identify per identity per request, and once
+  per Magento session for guest email and newsletter. Adds the `Magento_Newsletter` dependency.
+  See README "Guest email and newsletter identify".
+- New (CWTASKS-159): Last Mile `refund` events for full and partial credit memos and `cancel`
+  events for order cancels, with `refundAmount` and `netSalesAmount` (net after the change,
+  before tax and shipping). They use the server order event shape of the collector route
+  `/v1/integrations/events` and the same queue and consumer. See README "Refunds and cancels".
+- Cart for the banner embed (CWTASKS-132): every storefront page sets `window.cwaxCart`
+  (`total` = cart section `subtotalAmount`, `currency` = store view currency, `items` =
+  `summary_count`) and dispatches `cwax:cart` on each cart change, from Magento customer data on
+  Luma and `private-content-loaded` on Hyva. No cart value in cached HTML, nothing sent to a
+  server. Needs the embed with cart support (conversionwax_js CWTASKS-132) to have any effect.
+
 ## 0.5.5
 
 - Fix: creating an account sent two `identify` events, because Magento dispatches

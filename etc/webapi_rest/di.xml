@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <!-- Luma checkout sends the guest email before the order through set-payment-information. -->
+    <type name="Magento\Checkout\Api\GuestPaymentInformationManagementInterface">
+        <plugin name="cwax_lastmile_guest_payment_email"
+                type="Cwax\Banner\Plugin\Lastmile\GuestPaymentEmailPlugin"/>
+    </type>
+</config>

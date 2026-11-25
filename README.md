@@ -43,8 +43,32 @@ not a replay buffer.
 | `checkout_submit_all_after` | `purchase` | increment ID, grand total, currency, customer, first SKU |
 | `customer_login` | `identify` | customer ID, SHA-256 email hash |
 | `customer_register_success` | `identify` | customer ID, SHA-256 email hash |
+| `sales_order_creditmemo_refund`, then the first save of that credit memo | `refund` | increment ID, credit memo ID, `refundAmount`, `netSalesAmount`, currency |
+| `order_cancel_after` | `cancel` | increment ID, `cancelledAt`, `netSalesAmount`, currency |
 
 Raw email addresses and visitor IP addresses are not sent by Magento.
+
+### Refunds and cancels
+
+Each full or partial credit memo (admin, REST refund order or refund invoice) sends one `refund`.
+Each order cancel (admin, REST, pending order cleanup cron) sends one `cancel`. They are server order
+events: visitor `server`, session `server-order-events`, `session.isNew` false, no customer ID, email
+hash, device or IP. Consent is not checked, because the events carry no visitor data. The order's
+store view config decides whether they are sent.
+
+- `refundAmount` = credit memo subtotal minus its discount. No tax, shipping or adjustments.
+- `netSalesAmount` = order net after the change: subtotal minus canceled and refunded subtotal, minus
+  the discount that is still applied. No tax, shipping or adjustments. A full cancel or a full refund
+  gives `0`. A discount that includes tax (Apply Discount On Prices: Including Tax) is counted without
+  its tax part (discount tax compensation), in `refundAmount` too. The canceled discount is capped at
+  the discount not yet invoiced, because Magento 2.4.6 stores too large a `discount_canceled` on a
+  partly invoiced order.
+- Amounts and currency are the order currency, the same as the `purchase` event.
+- `eventId` is `refund-<credit memo entity ID>` or `cancel-<order increment ID>`, so a retry is
+  deduplicated.
+- An error never stops the refund or the cancel. It is logged.
+- The `purchase` event does not carry `netSalesAmount`, so an order that is not refunded or canceled
+  still shows "No net amount" in Last Mile.
 
 ### Views come from lm.js
 
@@ -89,6 +113,30 @@ prerender requests (`Sec-Purpose`, `Purpose`, `X-Purpose`, `X-Moz`).
 The Staging environment loads the staging build
 (`https://dev.assets.conversionwax.com/lastmile/v1/lm.js`), which reports to the staging collector.
 `lm.js` does not start on `localhost`, `*.localhost` or `*.local` hosts.
+
+### Guest email and newsletter identify
+
+Two more sources send `identify`, with the same email hash as login (EmailHasher) and the visitor's
+`_cwid` and `_cws`, so the visit is joined to the email before an order exists:
+
+| Source | Area | Key data |
+| --- | --- | --- |
+| Guest email saved on the quote (`sales_quote_save_after`, email changed, no customer): Hyva Checkout, other one page checkouts, and the order placement | storefront, REST | email hash only |
+| Luma guest `set-payment-information` (plugin on `GuestPaymentInformationManagementInterface::savePaymentInformation`) | REST | email hash only |
+| Newsletter signup (`newsletter_subscriber_save_after`, into Subscribed or Not Activated) | storefront | email hash; customer ID when logged in |
+
+- Luma checkout keeps the guest email in the browser until a payment method calls
+  `set-payment-information` or the order is placed. The email availability check
+  (`customers/isEmailAvailable`) is not used: it does not save the email and runs while the guest
+  types.
+- One identify per identity (customer ID plus email hash) per request for every source. Guest
+  checkout and newsletter also send it once per Magento session: the session keeps the last
+  identity that was queued (a hash, never the email), so a reload sends nothing and a changed email
+  sends a new identify. A signup during registration does not add a second identify.
+- Consent is the same as for every commerce event: no storage consent, no measurement consent, or
+  no connection means nothing is queued, and the identity is not remembered.
+- The newsletter confirmation link sends nothing. Admin, cron and GraphQL saves send nothing.
+- An error is logged and never stops checkout or the signup.
 
 ## Visitor identity
 
@@ -255,3 +303,23 @@ The original widget remains available. It accepts a `banner_div` value and loads
 `https://assets.conversionwax.com/dist/app.js` on storefront pages. The CSP whitelist permits
 ConversionWax script, style, image, and connection hosts (`*.conversionwax.com`), which also covers
 `lm.js` and the collector it reports to.
+
+## Cart for the banner embed
+
+Banner content can show the live cart: the tokens `{{cart_remaining N}}`, `{{cart_total}}` and
+`{{cart_items}}` and the audience keys `cart_total` and `cart_open` (free-shipping bar,
+left-in-cart message). On every storefront page `cart.phtml` gives the embed the cart in the form
+it expects on sites that are not Shopify: `window.cwaxCart = {total, currency, items}` and, on
+each change, a `cwax:cart` window event with the same object as `detail`.
+
+- `total` is the cart section's `subtotalAmount`: the quote subtotal in the store view's current
+  currency, before discounts and shipping (tax as the store's subtotal setting). `items` is
+  `summary_count` (rounded up to a whole number). `currency` is the store view's current currency.
+- Luma reads the `cart` section through `Magento_Customer/js/customer-data` and follows each update
+  (add, remove, quantity, mini cart reload, section reload on a cached page). Hyva reads
+  `private-content-loaded`. No RequireJS config and no separate Hyva layout are needed.
+- Full-page cache safe: the HTML holds only the currency code, which is part of the page cache key.
+  Cart values exist only in the browser, from Magento's private content. Nothing is stored and
+  nothing is sent to a server, so no consent gate applies (the embed gates claim-based keys itself).
+- Until Magento has loaded the cart section (a new visitor who has not used the cart yet), nothing
+  is set and the embed treats the cart as unknown: only the default variant shows.

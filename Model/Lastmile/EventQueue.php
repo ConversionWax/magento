@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
 
 class EventQueue
 {
-    private const SDK_VERSION = 'magento-0.5.5';
+    public const SDK_VERSION = 'magento-0.6.0';
     private bool $sessionStartQueued = false;
     private ?ConsentDecisionInterface $consentDecision = null;
 
@@ -31,32 +31,36 @@ class EventQueue
     ) {
     }
 
-    /** @param array<string, mixed> $attributes */
-    public function enqueue(string $type, array $attributes = []): void
+    /**
+     * @param array<string, mixed> $attributes
+     * @return bool true when the event was queued; false when config, consent or an error stopped it
+     */
+    public function enqueue(string $type, array $attributes = []): bool
     {
         try {
-            $this->enqueueInternal($type, $attributes);
+            return $this->enqueueInternal($type, $attributes);
         } catch (\Throwable $exception) {
             // Tracking must never break rendering, login, cart, or checkout.
             $this->logger->error('ConversionWax Last Mile could not enqueue an event.', [
                 'event_type' => $type,
                 'exception' => $exception,
             ]);
+            return false;
         }
     }
 
     /** @param array<string, mixed> $attributes */
-    private function enqueueInternal(string $type, array $attributes): void
+    private function enqueueInternal(string $type, array $attributes): bool
     {
         if ($this->isSpeculativeLoad()) {
             // Checked before visitorContext->get() so a page the shopper has
             // not opened neither reports an event nor touches their cookies.
-            return;
+            return false;
         }
 
         $storeId = (int) $this->storeManager->getStore()->getId();
         if (!$this->config->isConfigured($storeId)) {
-            return;
+            return false;
         }
 
         // The consent decision mirrors the ConversionWax platform's own
@@ -66,7 +70,7 @@ class EventQueue
         // without it.
         $decision = $this->resolveConsent($storeId);
         if (!$decision->isStorageGranted()) {
-            return;
+            return false;
         }
 
         $context = $this->visitorContext->get();
@@ -74,13 +78,13 @@ class EventQueue
             // Identity could not be established for this response (eg a
             // cacheable page with no prior cookie); do not report a phantom
             // new visitor.
-            return;
+            return false;
         }
 
         if (!$decision->isMeasurementGranted()) {
             // Identity may still be usable elsewhere (eg a future Banner
             // personalization read); no event may ship to the collector.
-            return;
+            return false;
         }
 
         $eventId = bin2hex(random_bytes(16));
@@ -149,6 +153,8 @@ class EventQueue
             'clientIp' => $this->resolveClientIp(),
             'payload' => $payload,
         ]);
+
+        return true;
     }
 
     /**
