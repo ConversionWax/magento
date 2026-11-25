@@ -68,15 +68,152 @@ class PurchaseObserverTest extends TestCase
         $this->assertSame('10000000', $captured['subtotalAmount']);
     }
 
+    public function testSendsOneLinePerVisibleItemThatAddsUpToTheSubtotal(): void
+    {
+        $items = [
+            $this->item(['id' => 7, 'product' => 12, 'sku' => 'MH01-M-Red', 'name' => 'Hoodie', 'qty' => '2.0000',
+                'price' => '50.0000', 'discount' => '10.0000', 'type' => 'configurable', 'child' => 15]),
+            $this->item(['id' => 8, 'product' => 20, 'sku' => 'MUG', 'name' => 'Mug', 'qty' => 1.0,
+                'price' => 12.5, 'discount' => 0.0, 'type' => 'simple']),
+        ];
+        $captured = $this->runObserver($this->order([
+            'grand' => 107.5, 'subtotal' => '112.5', 'discount' => -10.0, 'tax' => 0.0, 'shipping' => 5.0,
+        ], $items, 'SAVE10'));
+
+        $this->assertSame([
+            ['lineId' => '7', 'quantity' => 2, 'unitPrice' => '50', 'productId' => '12', 'variantId' => '15',
+                'sku' => 'MH01-M-Red', 'title' => 'Hoodie', 'lineDiscount' => '10'],
+            ['lineId' => '8', 'quantity' => 1, 'unitPrice' => '12.5', 'productId' => '20', 'sku' => 'MUG',
+                'title' => 'Mug', 'lineDiscount' => '0'],
+        ], $captured['lineItems']);
+        $this->assertSame([['code' => 'SAVE10', 'amount' => '10']], $captured['discountCodes']);
+        $net = 0.0;
+        foreach ($captured['lineItems'] as $line) {
+            $net += (float) $line['unitPrice'] * $line['quantity'] - (float) ($line['lineDiscount'] ?? 0);
+        }
+        $this->assertSame(112.5 - 10.0, $net);
+    }
+
+    public function testAFractionalQuantityDropsTheWholeList(): void
+    {
+        $items = [$this->item(['id' => 9, 'product' => 1, 'sku' => 'RICE', 'name' => 'Rice', 'qty' => 1.5,
+            'price' => 4.0, 'discount' => 0.0, 'type' => 'simple'])];
+        $captured = $this->runObserver($this->order([
+            'grand' => 6.0, 'subtotal' => 6.0, 'discount' => null, 'tax' => null, 'shipping' => null,
+        ], $items));
+
+        $this->assertArrayNotHasKey('lineItems', $captured);
+        $this->assertArrayNotHasKey('discountCodes', $captured);
+        $this->assertSame('RICE', $captured['productId']);
+    }
+
+    public function testSeveralCouponCodesCarryNoAmount(): void
+    {
+        $captured = $this->runObserver($this->order([
+            'grand' => 6.0, 'subtotal' => 6.0, 'discount' => -2.0, 'tax' => null, 'shipping' => null,
+        ], [], 'A1, B2,A1'));
+
+        $this->assertSame([['code' => 'A1'], ['code' => 'B2']], $captured['discountCodes']);
+    }
+
+    /** @param array<string, mixed> $d */
+    private function item(array $d): object
+    {
+        return new class ($d) {
+            /** @param array<string, mixed> $d */
+            public function __construct(private array $d)
+            {
+            }
+
+            public function getItemId(): mixed
+            {
+                return $this->d['id'];
+            }
+
+            public function getQuoteItemId(): mixed
+            {
+                return null;
+            }
+
+            public function getProductId(): mixed
+            {
+                return $this->d['product'];
+            }
+
+            public function getSku(): string
+            {
+                return $this->d['sku'];
+            }
+
+            public function getName(): string
+            {
+                return $this->d['name'];
+            }
+
+            public function getQtyOrdered(): mixed
+            {
+                return $this->d['qty'];
+            }
+
+            public function getPrice(): mixed
+            {
+                return $this->d['price'];
+            }
+
+            public function getDiscountAmount(): mixed
+            {
+                return $this->d['discount'];
+            }
+
+            public function getProductType(): string
+            {
+                return $this->d['type'];
+            }
+
+            /** @return list<object> */
+            public function getChildrenItems(): array
+            {
+                if (!isset($this->d['child'])) {
+                    return [];
+                }
+                $childId = $this->d['child'];
+                return [new class ($childId) {
+                    public function __construct(private int $id)
+                    {
+                    }
+
+                    public function getProductId(): int
+                    {
+                        return $this->id;
+                    }
+                }];
+            }
+        };
+    }
+
     /**
      * @param array<string, float|string|null> $amounts
      */
-    private function order(array $amounts): object
+    private function order(array $amounts, array $items = [], ?string $coupon = null): object
     {
-        return new class ($amounts) {
-            /** @param array<string, float|string|null> $a */
-            public function __construct(private array $a)
+        return new class ($amounts, $items, $coupon) {
+            /**
+             * @param array<string, float|string|null> $a
+             * @param list<object> $items
+             */
+            public function __construct(private array $a, private array $items, private ?string $coupon)
             {
+            }
+
+            /** @return list<object> */
+            public function getAllVisibleItems(): array
+            {
+                return $this->items;
+            }
+
+            public function getCouponCode(): ?string
+            {
+                return $this->coupon;
             }
 
             public function getIncrementId(): string

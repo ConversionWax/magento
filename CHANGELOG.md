@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (CWTASKS-128, feature branch, not in a release yet)
+
+- Purchase events now carry `lineItems` (one per visible order item: item id, product id, the
+  chosen simple product id for a configurable item, SKU, name, ordered quantity, unit price and
+  item discount, in the order currency) and `discountCodes` (the order coupon code or codes; the
+  amount only for a single code). Product and price data only: no customer data and no custom
+  options. A line that cannot be read (for example a fractional quantity) leaves the whole list
+  out. Needs a collector with CWTASKS-128 (lastmile 75b77d5 or later) and BigQuery
+  `migrate_lastmile.order_line_items.sql` on that project; an older collector rejects the event.
+
 ## 0.5.5
 
 - Fix: creating an account sent two `identify` events, because Magento dispatches

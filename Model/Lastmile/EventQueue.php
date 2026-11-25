@@ -100,7 +100,10 @@ class EventQueue
             'discountAmount' => $attributes['discountAmount'] ?? null,
             'taxAmount' => $attributes['taxAmount'] ?? null,
             'shippingAmount' => $attributes['shippingAmount'] ?? null,
-        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+            // CWTASKS-128: product lines and coupon codes of a purchase (lists, never empty).
+            'lineItems' => $attributes['lineItems'] ?? null,
+            'discountCodes' => $attributes['discountCodes'] ?? null,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '' && $value !== []);
 
         $isNew = $context['isNew'] && !$this->sessionStartQueued;
         $this->sessionStartQueued = $this->sessionStartQueued || $isNew;
