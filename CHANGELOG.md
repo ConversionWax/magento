@@ -8,7 +8,8 @@
   amount only for a single code). Product and price data only: no customer data and no custom
   options. A line that cannot be read (for example a fractional quantity) leaves the whole list
   out. Needs a collector with CWTASKS-128 (lastmile 75b77d5 or later) and BigQuery
-  `migrate_lastmile.order_line_items.sql` on that project; an older collector rejects the event.
+  `migrate_lastmile.order_line_items.sql` on that project to store them; an older collector
+  accepts the purchase and ignores the two lists.
 
 ## 0.5.5
 
