@@ -43,8 +43,32 @@ not a replay buffer.
 | `checkout_submit_all_after` | `purchase` | increment ID, grand total, currency, customer, first SKU |
 | `customer_login` | `identify` | customer ID, SHA-256 email hash |
 | `customer_register_success` | `identify` | customer ID, SHA-256 email hash |
+| `sales_order_creditmemo_refund`, then the first save of that credit memo | `refund` | increment ID, credit memo ID, `refundAmount`, `netSalesAmount`, currency |
+| `order_cancel_after` | `cancel` | increment ID, `cancelledAt`, `netSalesAmount`, currency |
 
 Raw email addresses and visitor IP addresses are not sent by Magento.
+
+### Refunds and cancels
+
+Each full or partial credit memo (admin, REST refund order or refund invoice) sends one `refund`.
+Each order cancel (admin, REST, pending order cleanup cron) sends one `cancel`. They are server order
+events: visitor `server`, session `server-order-events`, `session.isNew` false, no customer ID, email
+hash, device or IP. Consent is not checked, because the events carry no visitor data. The order's
+store view config decides whether they are sent.
+
+- `refundAmount` = credit memo subtotal minus its discount. No tax, shipping or adjustments.
+- `netSalesAmount` = order net after the change: subtotal minus canceled and refunded subtotal, minus
+  the discount that is still applied. No tax, shipping or adjustments. A full cancel or a full refund
+  gives `0`. A discount that includes tax (Apply Discount On Prices: Including Tax) is counted without
+  its tax part (discount tax compensation), in `refundAmount` too. The canceled discount is capped at
+  the discount not yet invoiced, because Magento 2.4.6 stores too large a `discount_canceled` on a
+  partly invoiced order.
+- Amounts and currency are the order currency, the same as the `purchase` event.
+- `eventId` is `refund-<credit memo entity ID>` or `cancel-<order increment ID>`, so a retry is
+  deduplicated.
+- An error never stops the refund or the cancel. It is logged.
+- The `purchase` event does not carry `netSalesAmount`, so an order that is not refunded or canceled
+  still shows "No net amount" in Last Mile.
 
 ### Views come from lm.js
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- New (CWTASKS-159): Last Mile `refund` events for full and partial credit memos and `cancel`
+  events for order cancels, with `refundAmount` and `netSalesAmount` (net after the change,
+  before tax and shipping). They use the server order event shape of the collector route
+  `/v1/integrations/events` and the same queue and consumer. See README "Refunds and cancels".
+
 ## 0.5.5
 
 - Fix: creating an account sent two `identify` events, because Magento dispatches
