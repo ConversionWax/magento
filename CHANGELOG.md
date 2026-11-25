@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
+- New (CWTASKS-100): `identify` before an order exists, from the guest checkout email (saved on
+  the quote, or Luma `set-payment-information`) and from newsletter signup. Email hash only for
+  guests, plus customer ID for a logged-in signup. One identify per identity per request, and once
+  per Magento session for guest email and newsletter. Adds the `Magento_Newsletter` dependency.
+  See README "Guest email and newsletter identify".
 - New (CWTASKS-159): Last Mile `refund` events for full and partial credit memos and `cancel`
   events for order cancels, with `refundAmount` and `netSalesAmount` (net after the change,
   before tax and shipping). They use the server order event shape of the collector route
