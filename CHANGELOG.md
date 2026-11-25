@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.1
+
+- New (CWTASKS-128): purchase events now carry `lineItems` (one per visible order item: item id,
+  product id, the chosen simple product id for a configurable item, SKU, name, ordered quantity,
+  unit price and item discount, in the order currency) and `discountCodes` (the order coupon code or codes; the
+  amount only for a single code). Product and price data only: no customer data and no custom
+  options. A line that cannot be read (for example a fractional quantity) leaves the whole list
+  out. Needs a collector with CWTASKS-128 (lastmile 75b77d5 or later) and BigQuery
+  `migrate_lastmile.order_line_items.sql` on that project to store them; an older collector
+  accepts the purchase and ignores the two lists.
+
 ## 0.6.0
 
 - New (CWTASKS-100): `identify` before an order exists, from the guest checkout email (saved on
