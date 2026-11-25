@@ -266,6 +266,27 @@ class EventQueueTest extends TestCase
         $this->assertSame(0.0, $event['value']);
     }
 
+    public function testPurchaseLinesAndCodesReachTheCollector(): void
+    {
+        $lines = [['lineId' => '7', 'productId' => '12', 'sku' => 'MH01', 'title' => 'Hoodie', 'quantity' => 2,
+            'unitPrice' => '50', 'lineDiscount' => '10']];
+        $codes = [['code' => 'SAVE10', 'amount' => '10']];
+        $event = $this->published('/checkout/onepage/success/', [
+            'orderId' => '000000044', 'lineItems' => $lines, 'discountCodes' => $codes,
+        ]);
+
+        $this->assertSame($lines, $event['lineItems']);
+        $this->assertSame($codes, $event['discountCodes']);
+    }
+
+    public function testEmptyLineListIsLeftOut(): void
+    {
+        $event = $this->published('/checkout/onepage/success/', ['orderId' => '000000045', 'lineItems' => []]);
+
+        $this->assertArrayNotHasKey('lineItems', $event);
+        $this->assertArrayNotHasKey('discountCodes', $event);
+    }
+
     public function testAbsentAmountsAreLeftOut(): void
     {
         $event = $this->published('/checkout/onepage/success/', ['orderId' => '000000043']);
