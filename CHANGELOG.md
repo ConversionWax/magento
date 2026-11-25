@@ -6,6 +6,11 @@
   events for order cancels, with `refundAmount` and `netSalesAmount` (net after the change,
   before tax and shipping). They use the server order event shape of the collector route
   `/v1/integrations/events` and the same queue and consumer. See README "Refunds and cancels".
+- Cart for the banner embed (CWTASKS-132): every storefront page sets `window.cwaxCart`
+  (`total` = cart section `subtotalAmount`, `currency` = store view currency, `items` =
+  `summary_count`) and dispatches `cwax:cart` on each cart change, from Magento customer data on
+  Luma and `private-content-loaded` on Hyva. No cart value in cached HTML, nothing sent to a
+  server. Needs the embed with cart support (conversionwax_js CWTASKS-132) to have any effect.
 
 ## 0.5.5
 
