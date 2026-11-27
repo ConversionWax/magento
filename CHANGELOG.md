@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.3
+
+- New (CWTASKS-254): a category page queues the lm.js context `category` (id), `categoryName` and
+  `categoryUrl` (path and query) so the collector can keep the last viewed category claim. Name and
+  path are left out when they fail the cookie contract rules. Consent flow unchanged.
+
 ## 0.6.2
 
 - New (CWTASKS-128): `refund` events now carry `refundLines` (one per refunded order line:
