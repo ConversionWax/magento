@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.2
+
+- New (CWTASKS-128): `refund` events now carry `refundLines` (one per refunded order line:
+  `lineId` = the order item id that the `purchase` event sent as `lineId`, `quantity` = refunded
+  quantity, `amount` = row total minus discount, before tax, in the order currency). A child item
+  of a configurable or bundle product is added to its parent line, so each line is sent once.
+  Amounts come from the items that Magento counts in the credit memo subtotal, so they add up to
+  `refundAmount` (except a shipping discount, see README "Refunds and cancels"). Lines with no
+  refunded quantity are left out. A line that cannot be read (for example a fractional quantity)
+  leaves the whole list out, and more than 500 lines too; the refund event with `refundAmount`
+  still goes out. Product reports then show refunded quantity and amount per product line.
+
 ## 0.6.1
 
 - New (CWTASKS-128): purchase events now carry `lineItems` (one per visible order item: item id,

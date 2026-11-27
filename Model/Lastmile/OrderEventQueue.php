@@ -47,12 +47,33 @@ class OrderEventQueue
                 'refundAmount' => $this->netSales->refundAmount($creditmemo),
                 'netSalesAmount' => $this->netSales->netAfterChange($order),
             ];
+            $refundLines = $this->refundLines($creditmemo, $order);
+            if ($refundLines !== null) {
+                $event['refundLines'] = $refundLines;
+            }
             $this->publish($order, $event);
         } catch (\Throwable $exception) {
             // Analytics must never stop a refund.
             $this->logger->error('ConversionWax Last Mile could not queue a refund event.', [
                 'exception' => $exception,
             ]);
+        }
+    }
+
+    /**
+     * Refund lines, or null. A failure here leaves the lines out; the refund event still goes out.
+     *
+     * @return list<array{lineId: string, quantity: int, amount: string}>|null
+     */
+    private function refundLines(CreditmemoInterface $creditmemo, OrderInterface $order): ?array
+    {
+        try {
+            return $this->netSales->refundLines($creditmemo, $order);
+        } catch (\Throwable $exception) {
+            $this->logger->warning('ConversionWax Last Mile sent a refund event without refund lines.', [
+                'exception' => $exception,
+            ]);
+            return null;
         }
     }
 
@@ -104,6 +125,9 @@ class OrderEventQueue
         }
         if (isset($fields['refundAmount'])) {
             $event['refundAmount'] = $fields['refundAmount'];
+        }
+        if (isset($fields['refundLines'])) {
+            $event['refundLines'] = $fields['refundLines'];
         }
         if (isset($fields['cancelledAt'])) {
             $event['cancelledAt'] = $ts;
