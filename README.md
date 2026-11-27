@@ -100,7 +100,7 @@ its live API, and then injects the tag itself (appended to `document.head`):
 - On a product page it first queues `['context', { productId: '<SKU>', pageType: 'product',
   platform: 'magento' }]`. The SKU is the same `productId` the server commerce events use. The
   product page also keeps `<meta name="cwax-product" content="<SKU>">` for any other front end.
-- On a category page it queues `['context', { category: '<id>', categoryName: '<name>', categoryUrl:
+- On a category page (0.6.3) it queues `['context', { category: '<id>', categoryName: '<name>', categoryUrl:
   '<path and query>', pageType: 'category', platform: 'magento' }]`, so lm.js sends a category view
   and the collector can set the last viewed category (`lc`) claim (CWTASKS-254). The name (1 to 40
   characters, no `< > { } "` or backslash) and path (1 to 64 URL-safe characters) are sent only when

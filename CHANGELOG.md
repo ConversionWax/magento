@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.3
 
 - New (CWTASKS-254): a category page queues the lm.js context `category` (id), `categoryName` and
   `categoryUrl` (path and query) so the collector can keep the last viewed category claim. Name and
