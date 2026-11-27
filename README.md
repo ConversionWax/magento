@@ -64,6 +64,14 @@ store view config decides whether they are sent.
   the discount not yet invoiced, because Magento 2.4.6 stores too large a `discount_canceled` on a
   partly invoiced order.
 - Amounts and currency are the order currency, the same as the `purchase` event.
+- `refundLines` (0.6.2) = the refunded lines of the credit memo: `lineId` (the order item id, the same
+  `lineId` as the `purchase` line), `quantity` (refunded quantity, a whole number) and `amount` (row
+  total minus discount, before tax). A configurable or bundle child item is counted on its parent
+  line, and the amount comes from the item that Magento counts in the credit memo subtotal (the parent
+  of a configurable, the children of a dynamic bundle). Lines with no refunded quantity are left out.
+  If any line cannot be read, or there are more than 500, no `refundLines` are sent; the refund event
+  still goes out. The line amounts add up to `refundAmount`, except when shipping with a shipping
+  discount is refunded: Magento puts that shipping discount in the credit memo discount.
 - `eventId` is `refund-<credit memo entity ID>` or `cancel-<order increment ID>`, so a retry is
   deduplicated.
 - An error never stops the refund or the cancel. It is logged.

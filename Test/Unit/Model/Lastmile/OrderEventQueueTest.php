@@ -108,6 +108,36 @@ class OrderEventQueueTest extends TestCase
         $this->assertSame([], $this->published);
     }
 
+    public function testRefundCarriesRefundLinesAfterTheRefundAmount(): void
+    {
+        $lines = [['lineId' => '11', 'quantity' => 1, 'amount' => '12.5']];
+        $netSales = $this->createMock(OrderNetSales::class);
+        $netSales->method('refundAmount')->willReturn('12.5');
+        $netSales->method('netAfterChange')->willReturn('27.5');
+        $netSales->method('refundLines')->willReturn($lines);
+
+        $this->queue(true, null, $netSales)->enqueueRefund($this->creditmemo(), $this->order());
+
+        $event = $this->published[0]['payload']['events'][0];
+        $this->assertSame($lines, $event['refundLines']);
+        $this->assertSame('12.5', $event['refundAmount']);
+    }
+
+    public function testRefundLinesFailureStillSendsTheRefund(): void
+    {
+        $netSales = $this->createMock(OrderNetSales::class);
+        $netSales->method('refundAmount')->willReturn('12.5');
+        $netSales->method('netAfterChange')->willReturn('27.5');
+        $netSales->method('refundLines')->willThrowException(new \RuntimeException('bad item'));
+
+        $this->queue(true, null, $netSales)->enqueueRefund($this->creditmemo(), $this->order());
+
+        $this->assertCount(1, $this->published);
+        $event = $this->published[0]['payload']['events'][0];
+        $this->assertSame('12.5', $event['refundAmount']);
+        $this->assertArrayNotHasKey('refundLines', $event);
+    }
+
     public function testCancelMessageShape(): void
     {
         $order = $this->order([
@@ -187,7 +217,11 @@ class OrderEventQueueTest extends TestCase
         $this->assertSame([], $this->published);
     }
 
-    private function queue(bool $configured = true, ?Config $config = null): OrderEventQueue
+    private function queue(
+        bool $configured = true,
+        ?Config $config = null,
+        ?OrderNetSales $netSales = null
+    ): OrderEventQueue
     {
         /** @var MessagePublisher&MockObject $publisher */
         $publisher = $this->createMock(MessagePublisher::class);
@@ -198,7 +232,7 @@ class OrderEventQueueTest extends TestCase
         return new OrderEventQueue(
             $config ?? $this->config($configured),
             $publisher,
-            new OrderNetSales(),
+            $netSales ?? new OrderNetSales(),
             $this->createMock(LoggerInterface::class)
         );
     }
