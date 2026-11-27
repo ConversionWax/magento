@@ -5,12 +5,14 @@
  * only context, and keeps cart, checkout, login and order events server side.
  *
  * Static for every visitor of a page (full-page cache): the only server values are store settings and,
- * on a product page, its SKU. No request goes to Magento from this script.
+ * on a product page its SKU, on a category page its id, name and path. No request goes to Magento from this script.
  *
  * There is no static lm.js tag. The inline script queues on the array form of window.cw (which lm.js
  * drains once it loads) and then injects the tag itself:
  *  - ['context', {productId: SKU, pageType: 'product', platform: 'magento'}] on a product page, always
  *    queued first;
+ *  - ['context', {category: id, categoryName: name, categoryUrl: path, pageType: 'category',
+ *    platform: 'magento'}] on a category page (name and path only when they pass the cookie contract);
  *  - Cookie Restriction Mode off: the tag is injected at once and lm.js applies the install's own
  *    consent mode;
  *  - restriction on and cookies already allowed: ['consent', true] is queued and the tag injected;
@@ -32,11 +34,14 @@ if (!$viewModel->isEnabled()) {
 /** @var \Cwax\Banner\ViewModel\ProductView|null $productView set by layout/catalog_product_view.xml */
 $productView = $block->getData('product_view');
 $sku = $productView ? $productView->getSku() : '';
+/** @var \Cwax\Banner\ViewModel\CategoryView|null $categoryView set by layout/catalog_category_view.xml */
+$categoryView = $block->getData('category_view');
+$contextData = $sku === ''
+    ? ($categoryView ? $categoryView->getContext() : [])
+    : ['productId' => $sku, 'pageType' => 'product', 'platform' => 'magento'];
 $jsonFlags = JSON_THROW_ON_ERROR | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
     | JSON_UNESCAPED_SLASHES;
-$context = $sku === ''
-    ? 'null'
-    : json_encode(['productId' => $sku, 'pageType' => 'product', 'platform' => 'magento'], $jsonFlags);
+$context = $contextData === [] ? 'null' : json_encode($contextData, $jsonFlags);
 $tag = json_encode([
     'src' => $viewModel->getSnippetUrl(),
     'siteId' => $viewModel->getWebsiteId(),

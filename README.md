@@ -100,6 +100,12 @@ its live API, and then injects the tag itself (appended to `document.head`):
 - On a product page it first queues `['context', { productId: '<SKU>', pageType: 'product',
   platform: 'magento' }]`. The SKU is the same `productId` the server commerce events use. The
   product page also keeps `<meta name="cwax-product" content="<SKU>">` for any other front end.
+- On a category page it queues `['context', { category: '<id>', categoryName: '<name>', categoryUrl:
+  '<path and query>', pageType: 'category', platform: 'magento' }]`, so lm.js sends a category view
+  and the collector can set the last viewed category (`lc`) claim (CWTASKS-254). The name (1 to 40
+  characters, no `< > { } "` or backslash) and path (1 to 64 URL-safe characters) are sent only when
+  they pass the cookie contract rules; otherwise only `category` is sent. Nothing is sent before
+  consent: lm.js gates on it.
 - Magento Cookie Restriction Mode off: the tag is injected at once and `lm.js` applies the install's
   own consent mode.
 - Restriction on and cookies already allowed (`user_allowed_save_cookie`): it queues
